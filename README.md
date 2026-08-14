@@ -68,6 +68,19 @@ va ikkinchi marta yozmaydi (`replayed: true`).
 va uni qayta yuborish bitta sotuvni ikki marta yozib qo'yishi mumkin. Bunday qatorlar
 "Navbat" oynasida qizil bilan ko'rsatiladi va odam tekshirishini talab qiladi.
 
+### Ilovaning o'zi oflaynda ochilishi
+
+IndexedDB yolg'iz o'zi yetarli emas: navbatdagi sotuvlar saqlanadi, lekin internetsiz
+sahifani qayta yuklasangiz bo'sh ekran chiqadi va kassir ularga yeta olmaydi. Shuning
+uchun `vite-plugin-pwa` orqali service worker qo'shilgan — ilova qobig'i (HTML/JS/CSS)
+keshlanadi va kassa internetsiz ham ochiladi.
+
+`/api/*` **hech qachon** keshlanmaydi: keshlangan `sync/pull` kechagi qoldiqni bugungi
+qilib ko'rsatardi, keshlangan POST javobi esa yozilmagan sotuvni "yozildi" deb bildirardi.
+
+Dev rejimida ham yoqilgan (`devOptions.enabled`) — eng ko'p sinash kerak bo'lgan xususiyat
+aynan hech kim sinamaydigani bo'lib qolmasligi uchun.
+
 ### Sinxronlash tartibi
 
 Avval **push**, keyin **pull**. Navbatdagi ma'lumot boshqa hech qayerda yo'q;
