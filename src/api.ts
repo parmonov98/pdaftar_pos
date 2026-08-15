@@ -112,11 +112,31 @@ function extractMessage(body: unknown): string | null {
 
 export type ShopSummary = { id: number; name: string; currency_id: number | null }
 
+/**
+ * Put a typed phone number into the shape pDaftar stores.
+ *
+ * Numbers are stored WITH the leading `+`, and a lookup is an exact string
+ * match — so `998905650500`, `90 565 05 00` and `+998 (90) 565-05-00` are all
+ * the same human and all fail to log in as typed. A cashier retyping their
+ * number three different ways and being told "user not found" each time has no
+ * way to guess that the spaces are the problem.
+ */
+export function normalizePhone(input: string): string {
+  const digits = input.replace(/\D/g, '')
+
+  if (digits === '') return ''
+  // 9 national digits — the country code was left off entirely.
+  if (digits.length === 9) return `+998${digits}`
+  if (digits.startsWith('998')) return `+${digits}`
+
+  return `+${digits}`
+}
+
 export async function login(phone: string, password: string): Promise<string> {
   const res = await request<{ data?: { token?: string }; token?: string }>(`${MOBILE_BASE}/login`, {
     method: 'POST',
     body: JSON.stringify({
-      phone_number: phone,
+      phone_number: normalizePhone(phone),
       password,
       // The mobile login demands one. A till has no push channel, so it
       // identifies itself rather than sending a fake device token.
@@ -136,11 +156,58 @@ export async function fetchShops(userToken: string): Promise<ShopSummary[]> {
   return res.data ?? []
 }
 
+export type TerminalSummary = {
+  id: number
+  name: string
+  device_id: string
+  provider: string
+  shop_id: number
+  is_active: boolean
+  last_seen_at: string | null
+  last_sync_at: string | null
+}
+
 export type RegisterResult = {
   token: string
-  terminal: { id: number; name: string; device_id: string; provider: string; shop_id: number }
+  terminal: TerminalSummary
   scopes: string[]
   kassa: { used: number; limit: number }
+}
+
+/**
+ * Refusal carrying the tills that are holding the shop's kassa slots.
+ *
+ * Thrown instead of a bare error so the login screen can show WHAT is full and
+ * offer to retire one — a shop that has filled its slots would otherwise have
+ * no way to add a replacement till at all.
+ */
+export class KassaLimitError extends ApiError {
+  readonly terminals: TerminalSummary[]
+  readonly kassa: { used: number; limit: number }
+
+  constructor(message: string, terminals: TerminalSummary[], kassa: { used: number; limit: number }) {
+    super(message, 403)
+    this.terminals = terminals
+    this.kassa = kassa
+  }
+}
+
+export async function fetchShopTerminals(
+  userToken: string,
+  shopId: number,
+): Promise<{ terminals: TerminalSummary[]; kassa: { used: number; limit: number } }> {
+  const res = await request<{ data: TerminalSummary[]; meta: { used: number; limit: number } }>(
+    `${POS_BASE}/terminals/manage?shop_id=${shopId}`,
+    { token: userToken },
+  )
+  return { terminals: res.data, kassa: res.meta }
+}
+
+export async function revokeTerminal(userToken: string, terminalId: number): Promise<void> {
+  await request(`${POS_BASE}/terminals/manage/${terminalId}`, {
+    method: 'DELETE',
+    token: userToken,
+  })
 }
 
 export async function registerTerminal(
@@ -148,17 +215,36 @@ export async function registerTerminal(
   shopId: number,
   name: string,
 ): Promise<RegisterResult> {
-  const res = await request<{ data: RegisterResult }>(`${POS_BASE}/terminals/register`, {
-    method: 'POST',
-    token: userToken,
-    body: JSON.stringify({
-      shop_id: shopId,
-      device_id: getDeviceId(),
-      name,
-      provider: 'pdaftar_pos',
-    }),
-  })
-  return res.data
+  try {
+    const res = await request<{ data: RegisterResult }>(`${POS_BASE}/terminals/register`, {
+      method: 'POST',
+      token: userToken,
+      body: JSON.stringify({
+        shop_id: shopId,
+        device_id: getDeviceId(),
+        name,
+        provider: 'pdaftar_pos',
+      }),
+    })
+    return res.data
+  } catch (e) {
+    // Registration refusals arrive as AuthExpiredError (403) like any other,
+    // but a full kassa is not an auth problem and must not send the cashier
+    // back to the login form. Re-thrown as its own type, carrying the payload
+    // the server attached so the screen can act on it.
+    const body = e instanceof ApiError ? (e.body as Record<string, unknown> | null) : null
+
+    if (body && body.code === 'kassa_limit_reached') {
+      const data = body.data as { terminals?: TerminalSummary[]; kassa?: { used: number; limit: number } }
+      throw new KassaLimitError(
+        String(body.message ?? 'Kassa limiti tugadi'),
+        data?.terminals ?? [],
+        data?.kassa ?? { used: 0, limit: 0 },
+      )
+    }
+
+    throw e
+  }
 }
 
 // ─── POS calls (terminal token) ───
