@@ -137,7 +137,7 @@ export function ProductSearch({
               <button
                 type="button"
                 key={product.id}
-                className={`search-row ${index === highlight ? 'on' : ''}`}
+                className={`search-hit ${index === highlight ? 'on' : ''}`}
                 onMouseEnter={() => setHighlight(index)}
                 onClick={() => take(product)}
               >

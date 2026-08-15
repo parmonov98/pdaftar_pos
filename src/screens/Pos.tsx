@@ -12,6 +12,7 @@ import {
 } from '../drafts'
 import { cartSubtotal, formatMoney, lineTotal, round2, submitSale, type CartLine, type Payment } from '../sales'
 import { lastSyncAt, pendingCount, syncNow } from '../sync'
+import { getTheme, setTheme, type Theme } from '../theme'
 import { Checkout } from './Checkout'
 import { ClientPicker } from './ClientPicker'
 import { Clients, Products } from './Catalog'
@@ -51,6 +52,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   const [checkout, setCheckout] = useState(false)
   const [clientPicker, setClientPicker] = useState(false)
 
+  const [theme, setThemeState] = useState<Theme>(getTheme)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(0)
@@ -315,6 +317,19 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
             {pending} ta navbatda
           </button>
         )}
+
+        <button
+          className="ghost icon-btn"
+          onClick={() => {
+            const next: Theme = theme === 'dark' ? 'light' : 'dark'
+            setTheme(next)
+            setThemeState(next)
+          }}
+          title={theme === 'dark' ? "Yorug' rejim" : "Qorong'i rejim"}
+          aria-label="Rejimni almashtirish"
+        >
+          {theme === 'dark' ? '☀' : '☾'}
+        </button>
 
         <button className="primary" onClick={() => runSync()} disabled={syncing}>
           {syncing ? 'Sinxronlanmoqda…' : 'Sinxronlash'}
@@ -597,7 +612,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                 <span>{formatMoney(subtotal)}</span>
               </div>
               {discount > 0 && (
-                <div className="row" style={{ color: '#f0cf8a' }}>
+                <div className="row" style={{ color: 'var(--warn-text)' }}>
                   <span>Chegirma</span>
                   <span>− {formatMoney(discount)}</span>
                 </div>

@@ -112,7 +112,7 @@ export function History() {
                   </div>
                 ))}
                 {sale.is_credit && (
-                  <div className="hist-item" style={{ color: 'var(--warn)' }}>
+                  <div className="hist-item" style={{ color: 'var(--warn-text)' }}>
                     <span className="grow">To'langan</span>
                     <span>{formatMoney(sale.paid_amount)}</span>
                   </div>

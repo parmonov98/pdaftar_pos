@@ -133,13 +133,13 @@ export function Checkout({
             <span>{formatMoney(total)}</span>
           </div>
           {change > 0 && (
-            <div className="row" style={{ color: '#8ee0b6', fontSize: 17, fontWeight: 600 }}>
+            <div className="row" style={{ color: 'var(--ok-text)', fontSize: 17, fontWeight: 600 }}>
               <span>Qaytim</span>
               <span>{formatMoney(change)}</span>
             </div>
           )}
           {owed > 0 && (
-            <div className="row" style={{ color: '#f0cf8a' }}>
+            <div className="row" style={{ color: 'var(--warn-text)' }}>
               <span>Qarzga qoladi</span>
               <span>{formatMoney(owed)}</span>
             </div>

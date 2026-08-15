@@ -1,19 +1,86 @@
-:root {
+/*
+ * Two palettes, one set of names.
+ *
+ * Every colour in the app comes from a variable here — nothing downstream
+ * hard-codes a hex. That is what makes the theme switch a one-line change
+ * rather than a hunt through twenty components, and it is why the "state"
+ * colours (ok / warn / danger) have separate TEXT and SURFACE variants: the
+ * green that reads well on a dark panel is invisible on a white one.
+ */
+:root,
+:root[data-theme='dark'] {
   --bg: #0f1419;
   --panel: #171d25;
   --panel-2: #1e2630;
+  --panel-3: #27303c;
   --line: #2b3541;
   --text: #e8edf3;
   --muted: #8b97a6;
-  --accent: #2f7ef0;
-  --accent-hover: #4a90f5;
+  /* Measured, not picked by eye: white-on-#2f7ef0 was 3.92:1 — under the 4.5
+     minimum — and that is the "To'lov qilish" button, the one a seller presses
+     a hundred times a day. #2a72da clears text contrast (4.65:1) while still
+     standing off the panel (3.65:1). Hover darkens rather than lightens,
+     because lightening this blue drops the white label back under the line. */
+  --accent: #2a72da;
+  --accent-hover: #2569c9;
+  --accent-fg: #fff;
   --ok: #2f9e6e;
   --danger: #d15252;
   --warn: #d9a441;
-  --radius: 10px;
 
+  /* Readable ON the page background. */
+  --ok-text: #8ee0b6;
+  --warn-text: #f0cf8a;
+  --danger-text: #ffb3b3;
+
+  /* Notice blocks: tinted surface + its own border. */
+  --ok-bg: #1c3329;
+  --ok-line: #2c5c47;
+  --warn-bg: #332c19;
+  --warn-line: #5c4c2c;
+  --danger-bg: #3a1f1f;
+  --danger-line: #5c2c2c;
+
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  --radius: 10px;
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+:root[data-theme='light'] {
+  /* Not pure white: a full-brightness screen at arm's length all day is
+     tiring, and the panels need something to sit ON to stay distinguishable. */
+  --bg: #eef1f6;
+  --panel: #ffffff;
+  --panel-2: #f4f6fa;
+  --panel-3: #e7ebf2;
+  --line: #d8dee8;
+  --text: #16202c;
+  --muted: #64717f;
+  --accent: #1a6fe0;
+  --accent-hover: #1560c8;
+  --accent-fg: #fff;
+  --ok: #1f8a5b;
+  --danger: #c33636;
+  --warn: #9a6b0d;
+
+  --ok-text: #1a7a4f;
+  --warn-text: #8a5d08;
+  --danger-text: #b32c2c;
+
+  --ok-bg: #e6f5ed;
+  --ok-line: #b7e0cb;
+  --warn-bg: #fdf3dd;
+  --warn-line: #e8d3a0;
+  --danger-bg: #fdeaea;
+  --danger-line: #f0c4c4;
+
+  --shadow: 0 12px 30px rgba(22, 32, 44, 0.16);
+  --scrim: rgba(22, 32, 44, 0.42);
+
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -36,18 +103,18 @@ button {
   border-radius: var(--radius);
   transition: background 120ms ease, border-color 120ms ease;
 }
-button:hover:not(:disabled) { background: #27303c; }
+button:hover:not(:disabled) { background: var(--panel-3); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-weight: 600;
 }
 button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 button.ghost { background: transparent; }
-button.danger { border-color: var(--danger); color: #ffb3b3; }
+button.danger { border-color: var(--danger); color: var(--danger-text); }
 button.x { padding: 6px 10px; color: var(--muted); }
 button.x:hover { color: var(--text); }
 
@@ -92,9 +159,9 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   font-size: 12.5px; padding: 4px 10px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--panel-2);
 }
-.pill.online { color: #8ee0b6; border-color: #2c5c47; }
-.pill.offline { color: #ffc9c9; border-color: #5c2c2c; }
-.pill.queue { color: #f0cf8a; border-color: #5c4c2c; }
+.pill.online { color: var(--ok-text); border-color: var(--ok-line); }
+.pill.offline { color: var(--danger-text); border-color: var(--danger-line); }
+.pill.queue { color: var(--warn-text); border-color: var(--warn-line); }
 
 /* ─── Layout ─── */
 .main { display: grid; grid-template-columns: 1fr 400px; flex: 1; min-height: 0; }
@@ -114,9 +181,16 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 }
 .hamburger span { display: block; height: 2px; background: var(--text); border-radius: 2px; }
 
+/* Square icon-only button, so ☀/☾ sit centred rather than in a text-shaped pill. */
+.icon-btn {
+  width: 38px; height: 36px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; line-height: 1; flex-shrink: 0;
+}
+
 /* ─── Drawer ─── */
 .drawer-scrim {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  position: fixed; inset: 0; background: var(--scrim);
   opacity: 0; pointer-events: none; transition: opacity 160ms ease; z-index: 30;
 }
 .drawer-scrim.on { opacity: 1; pointer-events: auto; }
@@ -132,7 +206,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .drawer-head { padding: 18px 18px 14px; border-bottom: 1px solid var(--line); }
 .drawer-shop { font-size: 17px; font-weight: 700; }
 .drawer-user { font-size: 13px; color: var(--muted); margin-top: 3px; }
-.drawer-user .sub { color: #6d7887; }
+.drawer-user .sub { color: var(--muted); }
 
 .drawer-nav { flex: 1; overflow-y: auto; padding: 10px; }
 .drawer-item {
@@ -146,7 +220,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .drawer-item .lb { display: block; font-weight: 600; font-size: 14.5px; }
 .drawer-item .hn { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
 .drawer-item .badge {
-  background: var(--warn); color: #23282f; font-weight: 700;
+  background: var(--warn); color: var(--panel); font-weight: 700;
   font-size: 12px; border-radius: 999px; padding: 2px 8px;
 }
 .drawer-foot { padding: 12px; border-top: 1px solid var(--line); }
@@ -168,14 +242,14 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .tab:hover { background: var(--panel-2); }
 .tab.on { background: var(--panel-2); color: var(--text); border-color: var(--accent); font-weight: 600; }
 .tab-count {
-  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+  background: var(--accent); color: var(--accent-fg); font-size: 11px; font-weight: 700;
   border-radius: 999px; padding: 1px 7px;
 }
 .tab-x {
   border: none; background: transparent; color: var(--muted);
   padding: 1px 4px; font-size: 12px; border-radius: 5px;
 }
-.tab-x:hover { background: var(--danger); color: #fff; }
+.tab-x:hover { background: var(--danger); color: var(--accent-fg); }
 .tab-new { padding: 8px 13px; font-size: 13.5px; white-space: nowrap; }
 
 /* ─── Standalone views ─── */
@@ -208,8 +282,8 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   font-size: 11px; color: var(--muted); border: 1px solid var(--line);
   border-radius: 999px; padding: 2px 8px; margin-left: 8px; font-weight: 500;
 }
-.tag.danger { color: #ffb3b3; border-color: #5c2c2c; }
-.tag.warn { color: #f0cf8a; border-color: #5c4c2c; }
+.tag.danger { color: var(--danger-text); border-color: var(--danger-line); }
+.tag.warn { color: var(--warn-text); border-color: var(--warn-line); }
 
 .hist-row { border-bottom: 1px solid var(--line); }
 .hist-row.cancelled { opacity: 0.55; }
@@ -243,21 +317,21 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow);
   overflow: hidden;
   max-height: 340px; overflow-y: auto;
 }
-.search-row-item, .search-row {
+.search-hit {
   display: flex; align-items: center; gap: 10px; width: 100%;
   border: none; border-radius: 0; background: transparent;
   padding: 10px 14px; text-align: left;
   border-bottom: 1px solid var(--line);
 }
-.search-row:last-child { border-bottom: none; }
-.search-row.on { background: #27303c; }
-.search-row .nm { display: block; font-weight: 600; font-size: 14px; }
-.search-row .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
-.search-row .pr { color: var(--accent); font-weight: 700; white-space: nowrap; }
+.search-hit:last-child { border-bottom: none; }
+.search-hit.on { background: var(--panel-3); }
+.search-hit .nm { display: block; font-weight: 600; font-size: 14px; }
+.search-hit .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.search-hit .pr { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .search-empty { padding: 14px; color: var(--muted); font-size: 14px; }
 
 /* ─── Cart table ─── */
@@ -314,7 +388,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .side-client .avatar {
   width: 38px; height: 38px; border-radius: 9px; background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; color: #fff; flex-shrink: 0;
+  font-weight: 700; color: var(--accent-fg); flex-shrink: 0;
 }
 .side-client .nm { display: block; font-weight: 600; }
 .side-client .sub { display: block; color: var(--muted); font-size: 12.5px; }
@@ -325,7 +399,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .discount-row { display: flex; gap: 6px; }
 .discount-row input { flex: 1; }
 .discount-row button { min-width: 52px; padding: 9px 10px; }
-.discount-row button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.discount-row button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 
 .side-spacer { flex: 1; }
 .side-foot { padding: 0 16px 12px; font-size: 12px; color: var(--muted); }
@@ -342,11 +416,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 /* ─── Segmented buttons ─── */
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg button { flex: 1; min-width: 68px; padding: 9px 6px; font-size: 13.5px; }
-.seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
 
 /* ─── Modal ─── */
 .overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
+  position: fixed; inset: 0; background: var(--scrim);
   display: flex; align-items: center; justify-content: center;
   padding: 20px; z-index: 40;
 }
@@ -367,7 +441,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .client-item .nm { display: block; font-weight: 600; }
 .client-item .sub { display: block; color: var(--muted); font-size: 12.5px; }
 .client-item .tag {
-  font-size: 11px; color: #ffb3b3; border: 1px solid #5c2c2c;
+  font-size: 11px; color: var(--danger-text); border: 1px solid var(--danger-line);
   border-radius: 999px; padding: 2px 8px;
 }
 
@@ -375,9 +449,9 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   border-radius: var(--radius); padding: 10px 14px; font-size: 13.5px;
   margin: 0 16px 12px; line-height: 1.45; cursor: pointer;
 }
-.notice.err { background: #3a1f1f; border: 1px solid #5c2c2c; color: #ffc9c9; }
-.notice.ok { background: #1c3329; border: 1px solid #2c5c47; color: #a6e8c6; }
-.notice.warn { background: #332c19; border: 1px solid #5c4c2c; color: #f0cf8a; }
+.notice.err { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger-text); }
+.notice.ok { background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-text); }
+.notice.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); }
 .modal .notice, .login .notice { margin: 0 0 12px; }
 
 /* ─── Login ─── */
@@ -412,8 +486,8 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   font-size: 11.5px; padding: 3px 8px; border-radius: 999px;
   border: 1px solid var(--line); white-space: nowrap;
 }
-.qrow .st.queued { color: #f0cf8a; }
-.qrow .st.sent { color: #a6e8c6; }
-.qrow .st.failed { color: #ffc9c9; }
-.qrow .st.error { color: #fff; background: var(--danger); border-color: var(--danger); }
-.qrow .err { color: #ffb3b3; font-size: 12px; margin-top: 3px; }
+.qrow .st.queued { color: var(--warn-text); }
+.qrow .st.sent { color: var(--ok-text); }
+.qrow .st.failed { color: var(--danger-text); }
+.qrow .st.error { color: var(--accent-fg); background: var(--danger); border-color: var(--danger); }
+.qrow .err { color: var(--danger-text); font-size: 12px; margin-top: 3px; }
