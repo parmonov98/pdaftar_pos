@@ -15,6 +15,13 @@ import { enqueue, pushOutbox } from './sync'
  * recorded and the Sinxronlash button will carry it up later.
  */
 
+/**
+ * The shop's house account for anonymous cash sales, created server-side by
+ * PosWalkInClientResolver. Filtered out of the client picker: it is plumbing,
+ * not a customer anyone would choose by name.
+ */
+export const WALK_IN_NAME = 'Naqd xaridor'
+
 export type CartLine = {
   product: Product
   quantity: number

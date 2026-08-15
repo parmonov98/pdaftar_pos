@@ -1,16 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  fetchShopTerminals,
   fetchShops,
-  getDeviceId,
-  KassaLimitError,
   login,
   normalizePhone,
   registerTerminal,
-  revokeTerminal,
   setTerminalToken,
   type ShopSummary,
-  type TerminalSummary,
 } from '../api'
 
 const LAST_PHONE_KEY = 'pos.last_phone'
@@ -18,15 +13,21 @@ const LAST_PHONE_KEY = 'pos.last_phone'
 type Step = 'credentials' | 'shop'
 
 /**
- * Two steps, because they are two different decisions.
+ * Signing in is signing in — nothing is created here.
  *
- * First "who are you" (a pDaftar account), then "which shop is this till in".
- * A shop cannot be inferred from the account — the owner of the shop this was
- * first tested against has twenty-two of them — and guessing wrong would file a
- * day's sales under the wrong books.
+ * pDaftar's access model is already per-person: a shop invites sellers, each has
+ * their own phone and password, and any of them can open the business. The POS
+ * inherits that exactly. Anvar types his number and sells; Sobir types his and
+ * sells. There is no till to register, no device to name, and no quota to hit.
  *
- * The user token from step one is held in component state only, never stored.
- * See the note in api.ts about why a till must not keep it.
+ * The device handshake still happens — it is what scopes offline operation ids
+ * and attributes a sale to the machine — but it runs silently right after login
+ * and the seller never sees it.
+ *
+ * The shop step appears only when the account has more than one shop, and it is
+ * a real decision: a shop cannot be inferred from the account (the owner this
+ * was tested against has twenty-two) and guessing wrong files a day's sales
+ * under the wrong books.
  */
 export function Login({ onReady }: { onReady: () => void }) {
   const [step, setStep] = useState<Step>('credentials')
@@ -37,13 +38,7 @@ export function Login({ onReady }: { onReady: () => void }) {
 
   const [userToken, setUserToken] = useState<string | null>(null)
   const [shops, setShops] = useState<ShopSummary[]>([])
-  const [shopId, setShopId] = useState<number | null>(null)
   const [shopFilter, setShopFilter] = useState('')
-  const [terminalName, setTerminalName] = useState('Kassa 1')
-
-  // Populated when the shop is full; turns a dead end into a decision.
-  const [slotHolders, setSlotHolders] = useState<TerminalSummary[] | null>(null)
-  const [kassa, setKassa] = useState<{ used: number; limit: number } | null>(null)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -57,30 +52,12 @@ export function Login({ onReady }: { onReady: () => void }) {
     return shops.filter((shop) => shop.name.toLowerCase().includes(needle))
   }, [shops, shopFilter])
 
-  // Whenever the chosen shop changes, show how many slots it has left BEFORE
-  // the cashier fills in a name and presses a button that cannot succeed.
-  useEffect(() => {
-    if (step !== 'shop' || userToken === null || shopId === null) return
-
-    let cancelled = false
-    setSlotHolders(null)
-
-    fetchShopTerminals(userToken, shopId)
-      .then((result) => {
-        if (cancelled) return
-        setKassa(result.kassa)
-        setSlotHolders(result.kassa.used >= result.kassa.limit ? result.terminals : null)
-      })
-      .catch(() => {
-        // Non-fatal: registration will report the real answer. No point
-        // blocking the screen over a pre-flight count.
-        if (!cancelled) setKassa(null)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [step, userToken, shopId])
+  /** The silent half: hand this device over and go straight to selling. */
+  async function connect(token: string, shopId: number) {
+    const result = await registerTerminal(token, shopId)
+    setTerminalToken(result.token)
+    onReady()
+  }
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault()
@@ -92,14 +69,21 @@ export function Login({ onReady }: { onReady: () => void }) {
       const list = await fetchShops(token)
 
       if (list.length === 0) {
-        setError("Bu foydalanuvchida do'kon yo'q. Avval pDaftarda do'kon yarating.")
+        setError("Bu hisobda do'kon yo'q. Do'kon egasidan sizni qo'shishini so'rang.")
         return
       }
 
       localStorage.setItem(LAST_PHONE_KEY, normalized)
+
+      // One shop is not a choice, so it is not shown as one. A seller in a
+      // single shop goes from password straight to the sale screen.
+      if (list.length === 1) {
+        await connect(token, list[0].id)
+        return
+      }
+
       setUserToken(token)
       setShops(list)
-      setShopId(list[0].id)
       setStep('shop')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Kirishda xatolik')
@@ -108,51 +92,16 @@ export function Login({ onReady }: { onReady: () => void }) {
     }
   }
 
-  async function handleRegister(event: React.FormEvent) {
-    event.preventDefault()
-    if (!userToken || shopId === null) return
-
-    setBusy(true)
-    setError(null)
-
-    try {
-      const result = await registerTerminal(userToken, shopId, terminalName.trim() || 'Kassa')
-      setTerminalToken(result.token)
-      onReady()
-    } catch (e) {
-      if (e instanceof KassaLimitError) {
-        setSlotHolders(e.terminals)
-        setKassa(e.kassa)
-        setError(e.message)
-        return
-      }
-      setError(e instanceof Error ? e.message : 'Kassani ulashda xatolik')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleRevoke(terminal: TerminalSummary) {
+  async function pickShop(shopId: number) {
     if (!userToken) return
 
-    const ok = confirm(
-      `"${terminal.name}" kassasi o'chirilsinmi?\n\n` +
-        "O'sha qurilmadagi tokeni bekor qilinadi va u qayta kirishi kerak bo'ladi. " +
-        'Sotuv tarixi saqlanib qoladi.',
-    )
-    if (!ok) return
-
     setBusy(true)
     setError(null)
 
     try {
-      await revokeTerminal(userToken, terminal.id)
-      const refreshed = await fetchShopTerminals(userToken, shopId!)
-      setKassa(refreshed.kassa)
-      setSlotHolders(refreshed.kassa.used >= refreshed.kassa.limit ? refreshed.terminals : null)
+      await connect(userToken, shopId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "O'chirishda xatolik")
-    } finally {
+      setError(e instanceof Error ? e.message : 'Ulanishda xatolik')
       setBusy(false)
     }
   }
@@ -161,10 +110,7 @@ export function Login({ onReady }: { onReady: () => void }) {
     setStep('credentials')
     setUserToken(null)
     setShops([])
-    setShopId(null)
     setShopFilter('')
-    setSlotHolders(null)
-    setKassa(null)
     setError(null)
     setPassword('')
   }
@@ -175,8 +121,8 @@ export function Login({ onReady }: { onReady: () => void }) {
         <h1>pDaftar POS</h1>
         <p className="sub">
           {step === 'credentials'
-            ? 'pDaftar hisobingiz bilan kiring'
-            : "Bu kassa qaysi do'konda ishlaydi?"}
+            ? 'Telefon raqamingiz va parolingiz bilan kiring'
+            : "Qaysi do'konda sotasiz?"}
         </p>
 
         {error && <div className="notice err">{error}</div>}
@@ -197,7 +143,7 @@ export function Login({ onReady }: { onReady: () => void }) {
               {phone.trim() !== '' && phone.trim() !== '+998' && (
                 <div className="hint">
                   Yuboriladi: <code>{normalized || '—'}</code>
-                  {!phoneLooksValid && ' · raqam to\'liq emas'}
+                  {!phoneLooksValid && " · raqam to'liq emas"}
                 </div>
               )}
             </div>
@@ -230,106 +176,52 @@ export function Login({ onReady }: { onReady: () => void }) {
             >
               {busy ? 'Kirilmoqda…' : 'Kirish'}
             </button>
+
+            <p className="hint" style={{ marginTop: 14, textAlign: 'center' }}>
+              pDaftardagi hisobingiz bilan kiriladi. Do'konga qo'shilgan har bir
+              sotuvchi o'z raqami bilan kira oladi.
+            </p>
           </form>
         ) : (
-          <form onSubmit={handleRegister}>
-            <div className="field">
-              <label htmlFor="shop">
-                Do'kon {shops.length > 1 && <span className="muted">· {shops.length} ta</span>}
-              </label>
-
-              {/* A filter only earns its space once the list is long enough to
-                  scroll past the one you want. */}
-              {shops.length > 6 && (
+          <>
+            {shops.length > 6 && (
+              <div className="field">
                 <input
-                  style={{ marginBottom: 8 }}
+                  autoFocus
                   value={shopFilter}
                   onChange={(e) => setShopFilter(e.target.value)}
                   placeholder="Do'kon nomi bo'yicha qidirish…"
                 />
-              )}
+              </div>
+            )}
 
-              <select
-                id="shop"
-                size={shops.length > 6 ? 7 : undefined}
-                value={shopId ?? ''}
-                onChange={(e) => setShopId(Number(e.target.value))}
-              >
-                {visibleShops.map((shop) => (
-                  <option key={shop.id} value={shop.id}>
-                    {shop.name}
-                  </option>
-                ))}
-              </select>
-
+            <div className="shop-list">
+              {visibleShops.map((shop) => (
+                <button
+                  key={shop.id}
+                  type="button"
+                  className="shop-item"
+                  disabled={busy}
+                  onClick={() => pickShop(shop.id)}
+                >
+                  {shop.name}
+                </button>
+              ))}
               {visibleShops.length === 0 && (
                 <div className="hint">"{shopFilter}" bo'yicha do'kon topilmadi</div>
               )}
             </div>
 
-            <div className="field">
-              <label htmlFor="tname">Kassa nomi</label>
-              <input
-                id="tname"
-                value={terminalName}
-                onChange={(e) => setTerminalName(e.target.value)}
-              />
-              <div className="hint">
-                Qurilma ID: <code>{getDeviceId().slice(0, 16)}…</code>
-              </div>
-            </div>
-
-            {kassa && (
-              <div className={`notice ${kassa.used >= kassa.limit ? 'err' : 'warn'}`}>
-                Kassa: <strong>{kassa.used}/{kassa.limit}</strong> band.
-                {kassa.used >= kassa.limit
-                  ? " Yangi kassa ochish uchun quyidagilardan birini o'chiring yoki do'konga foydalanuvchi qo'shing."
-                  : " Kassalar soni do'kondagi pDaftar foydalanuvchilari soniga teng."}
-              </div>
-            )}
-
-            {slotHolders && slotHolders.length > 0 && (
-              <div className="field">
-                <label>Slotni band qilgan kassalar</label>
-                {slotHolders
-                  .filter((t) => t.is_active)
-                  .map((terminal) => (
-                    <div className="qrow" key={terminal.id}>
-                      <div className="grow">
-                        <div>{terminal.name}</div>
-                        <div style={{ color: 'var(--muted)', fontSize: 12 }}>
-                          {terminal.provider}
-                          {terminal.last_seen_at
-                            ? ` · oxirgi faollik ${new Date(terminal.last_seen_at).toLocaleString('uz-UZ')}`
-                            : ' · hech qachon ulanmagan'}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="danger ghost"
-                        disabled={busy}
-                        onClick={() => handleRevoke(terminal)}
-                      >
-                        O'chirish
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="ghost" style={{ flex: 1 }} onClick={backToCredentials}>
-                Orqaga
-              </button>
-              <button
-                className="primary"
-                style={{ flex: 2 }}
-                disabled={busy || shopId === null || (kassa !== null && kassa.used >= kassa.limit)}
-              >
-                {busy ? 'Ulanmoqda…' : 'Kassani ulash'}
-              </button>
-            </div>
-          </form>
+            <button
+              type="button"
+              className="ghost"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={backToCredentials}
+              disabled={busy}
+            >
+              Orqaga
+            </button>
+          </>
         )}
       </div>
     </div>

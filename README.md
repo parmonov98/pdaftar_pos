@@ -30,20 +30,39 @@ npm run build        # dist/ ga yig'ish
 npm run preview      # yig'ilganini ko'rish
 ```
 
-## Kirish
+## Kirish — kassa yo'q, sotuvchi bor
 
-1. pDaftar telefon raqami va paroli bilan kiriladi.
-2. Do'kon tanlanadi va kassaga nom beriladi.
-3. Ilova `POST /api/pos/v1/terminals/register` orqali **kassa tokeni** oladi.
+pDaftarda do'kon egasi sotuvchilarni taklif qiladi va har birining o'z raqami va
+paroli bo'ladi. POS **aynan shuni** meros oladi:
 
-User tokeni saqlanmaydi — faqat ro'yxatdan o'tish uchun ishlatiladi va tashlab yuboriladi.
-Umumiy kassada owner tokenini saqlash xavfli.
+- Anvar o'z raqami bilan kiradi va sotadi.
+- Sobir o'z raqami bilan kiradi va sotadi.
+- Hech kim "kassa yaratmaydi", tanlamaydi va nom bermaydi.
 
-**Kassalar soni** do'kondagi pDaftar foydalanuvchilari soniga teng. Limit tugasa
-403 qaytadi — do'konga foydalanuvchi qo'shish yoki eski kassani o'chirish kerak.
+Oqim: raqam + parol → do'kon bitta bo'lsa avtomat tanlanadi (ko'p bo'lsa ro'yxat) →
+sotuv ekrani. Tamom.
 
-Bir xil qurilma (`device_id` localStorage'da saqlanadi) qayta ro'yxatdan o'tsa,
-eski qatorni qayta ishlatadi va eski tokenni bekor qiladi — yangi slot yemaydi.
+Fonda qurilma "handshake"i bo'lib o'tadi (`POST /terminals/register`) va u
+sotuvchiga ko'rinmaydi. **Hech qanday limit yo'q** — do'konga kira oladigan har bir
+user POS'da sotadi. Qurilma yozuvi ikki narsa uchun kerak: offline amal ID'lari
+qurilma bo'yicha ajratiladi, va sotuv qaysi mashinada qilinganini bilish uchun.
+Qurilma nomi o'zi qo'yiladi: `Anvar · Chrome`.
+
+User tokeni saqlanmaydi — faqat handshake uchun ishlatiladi va tashlab yuboriladi.
+Umumiy qurilmada owner tokenini saqlash xavfli.
+
+Do'kon egasi `GET /terminals/manage` orqali qaysi qurilmalar ulanganini ko'radi va
+keraksizini uzib qo'yadi.
+
+## Sotuv ekrani
+
+Filter tagida **faqat tanlangan mahsulotlar** turadi — ya'ni savdo o'zi.
+Katalog "plitkalar devori" emas: mahsulot yozib qidiriladi yoki barcode skanerlanadi,
+mosliklar qidiruv maydoni ustida dropdown bo'lib chiqadi. Skaner Enter bosganda
+aniq moslik darrov qo'shiladi va maydon tozalanadi.
+
+O'ng tomonda butun savdoga tegishli qarorlar: mijoz, valyuta, chegirma (% yoki summa),
+jami va to'lov tugmasi.
 
 ## Offline qanday ishlaydi
 

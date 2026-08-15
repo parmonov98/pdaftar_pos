@@ -1,7 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db'
-import { cartSubtotal, formatMoney, round2, type CartLine, type Payment } from '../sales'
+import { useState } from 'react'
+import { formatMoney, round2, type Payment } from '../sales'
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Naqd',
@@ -10,69 +8,53 @@ const PAYMENT_LABELS: Record<string, string> = {
   bank_account: 'Hisob raqam',
 }
 
+const QUICK_NOTES = [1000, 5000, 10000, 50000, 100000]
+
 /**
- * The payment sheet.
+ * Payment only.
  *
- * Two rules are enforced here rather than left to the server, because both are
- * things the cashier can still fix while the customer is present:
+ * Discount and customer live in the sidebar, where they belong: both are
+ * decided while the basket is being built, not at the moment money changes
+ * hands. What is left here is the one thing that happens at the counter — how
+ * much was handed over, in what form.
  *
- *   - nasiya (anything unpaid) must name a real client;
- *   - the amount handed over is entered as given, and change is derived —
- *     never the other way round, so the receipt records what actually
- *     happened rather than what was owed.
+ * The amount tendered is entered as given and the change is derived, never the
+ * other way round, so the receipt records what actually happened rather than
+ * what was owed.
  */
 export function Checkout({
-  lines,
+  total,
+  clientId,
   onCancel,
   onConfirm,
 }: {
-  lines: CartLine[]
+  total: number
+  clientId: number | null
   onCancel: () => void
-  onConfirm: (payment: Payment) => Promise<void>
+  onConfirm: (payment: Omit<Payment, 'discount' | 'clientId'>) => Promise<void>
 }) {
-  const subtotal = cartSubtotal(lines)
-
-  const [discount, setDiscount] = useState('0')
   const [paymentType, setPaymentType] = useState<Payment['paymentType']>('cash')
-  const [clientId, setClientId] = useState<number | null>(null)
+  const [paid, setPaid] = useState(String(total))
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const discountValue = round2(Math.max(0, Math.min(Number(discount) || 0, subtotal)))
-  const total = round2(subtotal - discountValue)
-
-  const [paid, setPaid] = useState<string>(String(total))
-  const paidValue = round2(Math.max(0, Number(paid) || 0))
-
+  const paidValue = paymentType === null ? 0 : round2(Math.max(0, Number(paid) || 0))
   const change = paidValue > total ? round2(paidValue - total) : 0
   const owed = paidValue < total ? round2(total - paidValue) : 0
   const isCredit = owed > 0
-
-  const clients = useLiveQuery(() => db.clients.orderBy('name').limit(300).toArray(), [], [])
-
-  const walkIn = useMemo(
-    () => clients.find((c) => c.name === 'Naqd xaridor' && c.phone_number === null),
-    [clients],
-  )
 
   async function submit() {
     setError(null)
 
     if (isCredit && clientId === null) {
-      setError('Nasiya (to\'liq to\'lanmagan) sotuv uchun mijoz tanlang.')
+      setError("To'liq to'lanmagan sotuv nasiya hisoblanadi — o'ng tomondan mijoz tanlang.")
       return
     }
 
     setBusy(true)
     try {
-      await onConfirm({
-        paymentType,
-        paidAmount: paidValue,
-        discount: discountValue,
-        clientId,
-        note,
-      })
+      await onConfirm({ paymentType, paidAmount: paidValue, note })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Xatolik')
     } finally {
@@ -83,7 +65,7 @@ export function Checkout({
   return (
     <div className="overlay" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>To'lov</h2>
+        <h2>To'lov — {formatMoney(total)}</h2>
 
         {error && <div className="notice err">{error}</div>}
 
@@ -95,7 +77,10 @@ export function Checkout({
                 key={value}
                 type="button"
                 className={paymentType === value ? 'on' : ''}
-                onClick={() => setPaymentType(value as Payment['paymentType'])}
+                onClick={() => {
+                  setPaymentType(value as Payment['paymentType'])
+                  setPaid(String(total))
+                }}
               >
                 {label}
               </button>
@@ -113,59 +98,29 @@ export function Checkout({
           </div>
         </div>
 
-        <div className="row2">
-          <div className="field">
-            <label htmlFor="disc">Chegirma</label>
-            <input
-              id="disc"
-              type="number"
-              min="0"
-              value={discount}
-              onChange={(e) => {
-                setDiscount(e.target.value)
-                const next = round2(subtotal - Math.max(0, Number(e.target.value) || 0))
-                // Keep the tendered amount in step with the total while the
-                // cashier is still adjusting it — retyping the full sum after
-                // every discount keystroke is how wrong figures get entered.
-                if (paymentType !== null) setPaid(String(Math.max(0, next)))
-              }}
-            />
-          </div>
+        {paymentType !== null && (
           <div className="field">
             <label htmlFor="paid">Berilgan summa</label>
             <input
               id="paid"
               type="number"
               min="0"
+              autoFocus
               value={paid}
               onChange={(e) => setPaid(e.target.value)}
-              disabled={paymentType === null}
             />
-          </div>
-        </div>
-
-        <div className="field">
-          <label htmlFor="client">
-            Mijoz {isCredit && <span style={{ color: '#f0cf8a' }}>— nasiya uchun majburiy</span>}
-          </label>
-          <select
-            id="client"
-            value={clientId ?? ''}
-            onChange={(e) => setClientId(e.target.value === '' ? null : Number(e.target.value))}
-          >
-            <option value="">
-              {isCredit ? '— tanlang —' : "Naqd xaridor (ismsiz)"}
-            </option>
-            {clients
-              .filter((c) => c.id !== walkIn?.id)
-              .map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                  {client.phone_number ? ` · ${client.phone_number}` : ''}
-                </option>
+            <div className="seg" style={{ marginTop: 8 }}>
+              <button type="button" onClick={() => setPaid(String(total))}>
+                Aniq
+              </button>
+              {QUICK_NOTES.filter((n) => n > total).slice(0, 3).map((n) => (
+                <button key={n} type="button" onClick={() => setPaid(String(n))}>
+                  {formatMoney(n)}
+                </button>
               ))}
-          </select>
-        </div>
+            </div>
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="note">Izoh</label>
@@ -173,22 +128,12 @@ export function Checkout({
         </div>
 
         <div className="totals" style={{ borderTop: '1px solid var(--line)', padding: '12px 0 0' }}>
-          <div className="row">
-            <span className="muted">Jami</span>
-            <span>{formatMoney(subtotal)}</span>
-          </div>
-          {discountValue > 0 && (
-            <div className="row">
-              <span className="muted">Chegirma</span>
-              <span>− {formatMoney(discountValue)}</span>
-            </div>
-          )}
           <div className="row grand">
             <span>To'lash</span>
             <span>{formatMoney(total)}</span>
           </div>
           {change > 0 && (
-            <div className="row" style={{ color: '#8ee0b6' }}>
+            <div className="row" style={{ color: '#8ee0b6', fontSize: 17, fontWeight: 600 }}>
               <span>Qaytim</span>
               <span>{formatMoney(change)}</span>
             </div>
@@ -203,10 +148,10 @@ export function Checkout({
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <button type="button" className="ghost" style={{ flex: 1 }} onClick={onCancel}>
-            Bekor
+            Orqaga
           </button>
           <button type="button" className="primary" style={{ flex: 2 }} onClick={submit} disabled={busy}>
-            {busy ? 'Yozilmoqda…' : 'Sotuvni yakunlash'}
+            {busy ? 'Yozilmoqda…' : 'Yakunlash'}
           </button>
         </div>
       </div>

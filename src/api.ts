@@ -2,10 +2,10 @@
  * Talking to pDaftar.
  *
  * Two credentials, two lifetimes, deliberately not interchangeable:
- *   - the USER token, held only long enough to register this device;
- *   - the TERMINAL token, which every POS call after that uses.
+ *   - the USER token, held only long enough to hand over this device;
+ *   - the DEVICE token, which every POS call after that uses.
  *
- * The user token is dropped as soon as registration succeeds. Keeping it in
+ * The user token is dropped as soon as the handshake succeeds. Keeping it in
  * localStorage on a shared till would leave a credential that can do everything
  * the owner's phone can do sitting on a machine the whole shop touches.
  */
@@ -44,10 +44,9 @@ export function setTerminalToken(token: string | null): void {
 /**
  * This machine's identity, stable across reloads and reinstalls of the tab.
  *
- * The server keys terminals on (shop, device_id) so that re-registering reuses
- * the same row. A device_id regenerated on every load would consume a fresh
- * kassa slot each time the browser was reopened, and the shop would hit its
- * limit by lunchtime.
+ * The server keys devices on (shop, device_id) so re-registering reuses the same
+ * row. A device_id regenerated on every load would leave a trail of dead device
+ * records in the owner's list, one per browser restart.
  */
 export function getDeviceId(): string {
   let id = localStorage.getItem(DEVICE_ID_KEY)
@@ -171,36 +170,17 @@ export type RegisterResult = {
   token: string
   terminal: TerminalSummary
   scopes: string[]
-  kassa: { used: number; limit: number }
-}
-
-/**
- * Refusal carrying the tills that are holding the shop's kassa slots.
- *
- * Thrown instead of a bare error so the login screen can show WHAT is full and
- * offer to retire one — a shop that has filled its slots would otherwise have
- * no way to add a replacement till at all.
- */
-export class KassaLimitError extends ApiError {
-  readonly terminals: TerminalSummary[]
-  readonly kassa: { used: number; limit: number }
-
-  constructor(message: string, terminals: TerminalSummary[], kassa: { used: number; limit: number }) {
-    super(message, 403)
-    this.terminals = terminals
-    this.kassa = kassa
-  }
 }
 
 export async function fetchShopTerminals(
   userToken: string,
   shopId: number,
-): Promise<{ terminals: TerminalSummary[]; kassa: { used: number; limit: number } }> {
-  const res = await request<{ data: TerminalSummary[]; meta: { used: number; limit: number } }>(
+): Promise<{ terminals: TerminalSummary[]; devices: number }> {
+  const res = await request<{ data: TerminalSummary[]; meta: { devices: number } }>(
     `${POS_BASE}/terminals/manage?shop_id=${shopId}`,
     { token: userToken },
   )
-  return { terminals: res.data, kassa: res.meta }
+  return { terminals: res.data, devices: res.meta.devices }
 }
 
 export async function revokeTerminal(userToken: string, terminalId: number): Promise<void> {
@@ -210,41 +190,30 @@ export async function revokeTerminal(userToken: string, terminalId: number): Pro
   })
 }
 
+/**
+ * Silent device handshake, run straight after login.
+ *
+ * The seller never sees this and it can never refuse them: there is no kassa to
+ * create and no quota to hit. It exists so offline operation ids are scoped per
+ * device and a sale can be attributed to the machine it was rung up on.
+ */
 export async function registerTerminal(
   userToken: string,
   shopId: number,
-  name: string,
 ): Promise<RegisterResult> {
-  try {
     const res = await request<{ data: RegisterResult }>(`${POS_BASE}/terminals/register`, {
       method: 'POST',
       token: userToken,
       body: JSON.stringify({
         shop_id: shopId,
         device_id: getDeviceId(),
-        name,
+        // No name: the server derives "Anvar · Chrome" from who signed in and
+        // what they signed in on. Asking a seller to name a till is exactly
+        // the step this design removes.
         provider: 'pdaftar_pos',
       }),
     })
-    return res.data
-  } catch (e) {
-    // Registration refusals arrive as AuthExpiredError (403) like any other,
-    // but a full kassa is not an auth problem and must not send the cashier
-    // back to the login form. Re-thrown as its own type, carrying the payload
-    // the server attached so the screen can act on it.
-    const body = e instanceof ApiError ? (e.body as Record<string, unknown> | null) : null
-
-    if (body && body.code === 'kassa_limit_reached') {
-      const data = body.data as { terminals?: TerminalSummary[]; kassa?: { used: number; limit: number } }
-      throw new KassaLimitError(
-        String(body.message ?? 'Kassa limiti tugadi'),
-        data?.terminals ?? [],
-        data?.kassa ?? { used: 0, limit: 0 },
-      )
-    }
-
-    throw e
-  }
+  return res.data
 }
 
 // ─── POS calls (terminal token) ───
@@ -264,7 +233,6 @@ export type MeResponse = {
     low_stock_threshold: number | null
   }
   scopes: string[]
-  kassa: { used: number; limit: number }
   server_time: string
 }
 
