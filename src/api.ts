@@ -299,6 +299,28 @@ export function fetchSyncStatus(): Promise<{
   return pos<{ data: never }>('/sync/status').then((r) => r.data)
 }
 
+export type RecentSale = {
+  id: number
+  total: number
+  paid_amount: number
+  is_credit: boolean
+  currency_id: number | null
+  client_name: string | null
+  client_phone: string | null
+  seller_name: string | null
+  is_cancelled: boolean
+  created_at: string | null
+  items: Array<{ product_id: number; name: string | null; quantity: number | null; total: number }>
+}
+
+export function fetchRecentSales(params: { limit?: number; mine?: boolean } = {}): Promise<RecentSale[]> {
+  const q = new URLSearchParams()
+  q.set('limit', String(params.limit ?? 50))
+  if (params.mine) q.set('mine', '1')
+
+  return pos<{ data: RecentSale[] }>(`/sales/recent?${q.toString()}`).then((r) => r.data)
+}
+
 export function lookupByCode(code: string) {
   return pos<{ data: unknown }>(`/products/lookup?code=${encodeURIComponent(code)}`).then((r) => r.data)
 }

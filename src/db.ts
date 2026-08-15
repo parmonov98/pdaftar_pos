@@ -89,6 +89,39 @@ export type OutboxItem = {
 
 export type MetaRow = { key: string; value: unknown }
 
+export type DraftLine = {
+  productId: number
+  /** Snapshot, so a line still reads correctly if the product is later deleted. */
+  name: string
+  quantity: number
+  price: number
+}
+
+/**
+ * An open, unfinished sale.
+ *
+ * A counter serves more than one customer at a time: someone is halfway through
+ * a basket, steps aside to find a size, and the next person is already putting
+ * things down. Holding only one basket forces the seller to either clear it or
+ * make the second customer wait, and both lose sales.
+ *
+ * Persisted rather than kept in memory because an unfinished basket is real
+ * work — a reload, a crashed tab, or a battery death must not silently discard
+ * ten scanned items.
+ */
+export type SaleDraft = {
+  id: string
+  /** Human label on the tab, e.g. "15.08-#2". */
+  name: string
+  createdAt: string
+  lines: DraftLine[]
+  clientId: number | null
+  clientName: string | null
+  discountValue: string
+  discountMode: 'percent' | 'amount'
+  currencyId: number
+}
+
 class PosDb extends Dexie {
   products!: Table<Product, number>
   clients!: Table<Client, number>
@@ -98,10 +131,26 @@ class PosDb extends Dexie {
   incomeCategories!: Table<Category, number>
   expenseCategories!: Table<Category, number>
   outbox!: Table<OutboxItem, number>
+  drafts!: Table<SaleDraft, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
     super('pdaftar-pos')
+    this.version(2).stores({
+      products: 'id, barcode, code, name',
+      clients: 'id, name, phone_number',
+      suppliers: 'id, name',
+      units: 'id',
+      currencies: 'id',
+      incomeCategories: 'id',
+      expenseCategories: 'id',
+      outbox: '++seq, client_operation_id, status, type, created_at',
+      // Ordered by creation so the tab strip reads left-to-right in the order
+      // the seller opened them.
+      drafts: 'id, createdAt',
+      meta: 'key',
+    })
+
     this.version(1).stores({
       // Indexed on barcode and code because those are the scanner's two
       // lookup paths and they run on every scanned item.
