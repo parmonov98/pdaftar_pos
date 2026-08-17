@@ -1,0 +1,1389 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "pDaftar POS Integration API",
+        "description": "\n * Integratsiya API — pDaftar POS va uchinchi tomon kassalari (AliPOS, YesPOS va boshqalar) uchun.\n *\n * ## Asosiy qoida\n * pDaftar — **haqiqat manbai** (source of truth). Kassaning lokal bazasi faqat **kesh + navbat**.\n * Qoldiq har doim `stock_movements` ledgeridan hisoblanadi, kassa uni faqat ko'rsatadi.\n *\n * ## Offline ishlash\n * Har bir yozuv amali `client_operation_id` (UUID, kassada amal bajarilgan payt yaratiladi) bilan\n * yuboriladi. Takroriy yuborish hech narsani o'zgartirmaydi — server saqlangan javobni qaytaradi\n * (`replayed: true`). Internet paydo bo'lganda navbat `POST /sync/push` orqali paket qilib yuboriladi.\n *\n * ## Sotuv va qoldiq\n * Kassadan kelgan sotuv **rad etilmaydi**: tovar allaqachon xaridorga berilgan. Qoldiq yetmasa\n * minusga tushadi va bu ko'rinadigan muammo bo'lib qoladi — sinxronlashda yo'qolgan sotuvdan ko'ra yaxshiroq.\n *\n * ## Uchinchi tomon kassalari\n * Tashqi POS tokeni `pos:catalog.read`, `pos:sales.write`, `pos:clients.write` scope'lari bilan\n * beriladi — ular o'z omborini o'zi yuritadi, bizga faqat sotuvni yuboradi.\n * ",
+        "contact": {
+            "name": "pDaftar",
+            "url": "https://pdaftar.uz"
+        },
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8083",
+            "description": "Lokal (Docker)"
+        },
+        {
+            "url": "https://api.pdaftar2.uz",
+            "description": "Production"
+        }
+    ],
+    "paths": {
+        "/api/pos/v1/sales": {
+            "post": {
+                "tags": [
+                    "POS Sales"
+                ],
+                "summary": "Sotuv qilish",
+                "description": "\n     * pDaftardagi Sotuv bilan bir xil yozuvlarni yaratadi: frozen SalesCalcList + qatorlar → Debt →\n     * `stock_movements` (sale) → to'langan bo'lsa Repayment → Kassa Kirim. Ya'ni POS sotuvi va ilova\n     * sotuvi bazada bir xil ko'rinadi.\n     *\n     * Qoldiq yetmasa ham **rad etilmaydi** — minusga tushadi.\n     * ",
+                "operationId": "4e39ed381af598727e19db3347c6c87d",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PosSaleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Sotuv yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Takroriy yuborish — avvalgi javob qaytarildi (replayed=true)"
+                    },
+                    "403": {
+                        "description": "Scope yetarli emas"
+                    },
+                    "409": {
+                        "description": "client_operation_id boshqa ma'lumot bilan ishlatilgan"
+                    },
+                    "422": {
+                        "description": "Validatsiya xatosi"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/sales/cancel": {
+            "post": {
+                "tags": [
+                    "POS Sales"
+                ],
+                "summary": "Sotuvni bekor qilish",
+                "description": "Qoldiqni tiklaydi — sotuv harakatlari ledgerdan o'chiriladi, kompensatsiya yozuvi yozilmaydi, shuning uchun mahsulot tarixi 'sotuv bo'lmagan' ko'rinishida qoladi.",
+                "operationId": "cc69c665567c70f0ef24b418761af5cd",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "sale_id"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "sale_id": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Bekor qilindi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/products": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Mahsulot yaratish",
+                "description": "Barcode bo'yicha mavjud mahsulot topilsa — yangi qator yaratilmaydi, mavjudi yangilanadi (qoldiq ikkiga bo'linib ketmasligi uchun). `quantity` yuborilsa `opening` harakati sifatida yoziladi.",
+                "operationId": "46106ff96c88d797e7caebda7e6790d1",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "local_id": {
+                                        "description": "Offline yaratilgan ID. Bir paket ichida keyingi amallar bu mahsulotga local-havola obyekti orqali murojaat qiladi — /sync/push tavsifiga qarang.",
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "barcode": {
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "price": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "nullable": true
+                                    },
+                                    "quantity": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "nullable": true
+                                    },
+                                    "unit_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "currency_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yaratildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            },
+            "patch": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Mahsulotni tahrirlash",
+                "description": "Yuborilmagan maydonlar tegilmaydi (array_key_exists), aniq `null` esa tozalaydi.",
+                "operationId": "8a5b1f9bc178ca6490fb8f9455543a35",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "id"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "id": {
+                                        "type": "integer"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "price": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "barcode": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yangilandi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/clients": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Mijoz qo'shish",
+                "operationId": "bb6b45c36ff1f71a2116bf2b2cefd566",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "phone_number": {
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yaratildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/suppliers": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Ta'minotchi yaratish",
+                "operationId": "72bad09140a1133d95983701786942fc",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "phone_number": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yaratildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/suppliers/transactions": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Ta'minotchiga kirim/chiqim",
+                "operationId": "e334fa5ee0ab68ad150c2c2f6e8d01f6",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "supplier_id",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "supplier_id": {
+                                        "type": "integer"
+                                    },
+                                    "direction": {
+                                        "type": "string",
+                                        "default": "chiqim",
+                                        "enum": [
+                                            "chiqim",
+                                            "kirim"
+                                        ]
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "currency_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/deliveries": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Prixod — ta'minotchidan mahsulot kirimi",
+                "description": "Nakladnoy yaratadi, mahsulotlarni topadi/yaratadi va `purchase` harakatlarini yozadi.",
+                "operationId": "c018fd4cf23bfac1ca50945f0bea9b2f",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "currency_id",
+                                    "products"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "supplier_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "supplier_name": {
+                                        "description": "supplier_id bo'lmasa — nomi bo'yicha topiladi/yaratiladi",
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "currency_id": {
+                                        "type": "integer"
+                                    },
+                                    "total_amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "products": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "name",
+                                                "quantity",
+                                                "price",
+                                                "unit_id"
+                                            ],
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "quantity": {
+                                                    "type": "number",
+                                                    "format": "float"
+                                                },
+                                                "price": {
+                                                    "description": "Tan narx",
+                                                    "type": "number",
+                                                    "format": "float"
+                                                },
+                                                "sale_price": {
+                                                    "description": "Sotuv narxi",
+                                                    "type": "number",
+                                                    "format": "float",
+                                                    "nullable": true
+                                                },
+                                                "unit_id": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Kirim yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/stock/movements": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Ombor harakati — tuzatish, qaytarish, hisobdan chiqarish, inventarizatsiya",
+                "description": "`counted_quantity` yuborilsa — inventarizatsiya (farq yoziladi). Aks holda `type` + `quantity`. Ishorani tur belgilaydi, mijoz emas.",
+                "operationId": "cfd8fb1feb96b99a01e318ea2f8e031c",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "product_id"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "product_id": {
+                                        "type": "integer"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "adjustment",
+                                            "return",
+                                            "write_off"
+                                        ],
+                                        "nullable": true
+                                    },
+                                    "quantity": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "nullable": true
+                                    },
+                                    "counted_quantity": {
+                                        "type": "number",
+                                        "format": "float",
+                                        "nullable": true
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/cash/income": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Kassa kirim",
+                "operationId": "0e117377f411e1fe772b9c7f61e98012",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "currency_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "category_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "payment_type": {
+                                        "type": "string",
+                                        "default": "cash",
+                                        "enum": [
+                                            "cash",
+                                            "card",
+                                            "terminal",
+                                            "bank_account"
+                                        ]
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/cash/expense": {
+            "post": {
+                "tags": [
+                    "POS Write"
+                ],
+                "summary": "Kassa chiqim",
+                "operationId": "daaa6857e190a0a6c861d552c4e553f7",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "client_operation_id",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "client_operation_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "currency_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "category_id": {
+                                        "type": "integer",
+                                        "nullable": true
+                                    },
+                                    "payment_type": {
+                                        "type": "string",
+                                        "default": "cash",
+                                        "enum": [
+                                            "cash",
+                                            "card",
+                                            "terminal",
+                                            "bank_account"
+                                        ]
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Yozildi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PosOperationResult"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/sales/recent": {
+            "get": {
+                "tags": [
+                    "POS Sales"
+                ],
+                "summary": "Do'konning so'nggi sotuvlari",
+                "description": "Barcha sotuvchilarning sotuvlari, eng yangisi birinchi. Kassaning o'z navbati emas — bu serverdagi haqiqiy tarix.",
+                "operationId": "1d3e855eea63fc6dd7c1d0ea73e1e91b",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200
+                        }
+                    },
+                    {
+                        "name": "mine",
+                        "in": "query",
+                        "description": "1 bo'lsa faqat shu sotuvchining sotuvlari",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/sync/push": {
+            "post": {
+                "tags": [
+                    "POS Sync"
+                ],
+                "summary": "Offline navbatni serverga yuborish",
+                "description": "\n     * Kassadagi bajarilmagan amallar paketi. Har biri alohida baholanadi — bittasi xato bo'lsa\n     * qolganlari baribir yoziladi, chunki bir yomon qatordan butun kun savdosi to'xtab qolmasligi kerak.\n     *\n     * Javobdagi har bir element `status` va `replayed` maydonlariga ega. Kassa `applied` bo'lganini\n     * (`replayed` bo'lsa ham) navbatdan o'chiradi, `failed` bo'lganini kassirga ko'rsatadi.\n     *\n     * Amallar **ketma-ket** bajariladi, chunki bitta paket ichida yaratilgan mahsulotga keyingi\n     * amal murojaat qilishi mumkin. Buning uchun `product.create` payloadida `local_id` yuboriladi,\n     * keyingi amalda esa id o'rniga bitta kalitli obyekt beriladi: kalit nomi — dollar belgisi va\n     * `local` so'zi, qiymati — o'sha `local_id`. Server uni yangi yaratilgan ID ga almashtiradi.\n     * ",
+                "operationId": "c482f1f386386ffb32827fc2fdd375c0",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "operations"
+                                ],
+                                "properties": {
+                                    "operations": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "client_operation_id",
+                                                "type",
+                                                "payload"
+                                            ],
+                                            "properties": {
+                                                "client_operation_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sale.create",
+                                                        "sale.cancel",
+                                                        "product.create",
+                                                        "product.update",
+                                                        "client.create",
+                                                        "supplier.create",
+                                                        "supplier.transaction",
+                                                        "delivery.create",
+                                                        "stock.movement",
+                                                        "cash.income",
+                                                        "cash.expense"
+                                                    ]
+                                                },
+                                                "occurred_at": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "payload": {
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "maxItems": 200
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Har bir amal natijasi",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "results": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/PosOperationResult"
+                                                    }
+                                                },
+                                                "applied": {
+                                                    "type": "integer"
+                                                },
+                                                "failed": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Paket juda katta yoki noto'g'ri"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/sync/pull": {
+            "get": {
+                "tags": [
+                    "POS Catalog"
+                ],
+                "summary": "Katalogni yuklab olish (inkremental)",
+                "description": "\n     * `since` + `since_id` kursori bo'yicha o'zgarganlarini qaytaradi. `has_more: true` bo'lsa\n     * javobdagi `next_since`/`next_since_id` bilan qayta chaqiring.\n     *\n     * O'chirilgan mahsulot/mijoz `deleted: true` bilan keladi — kassa uni lokal bazadan o'chiradi.\n     * Birinchi sinxronlashda `since` yubormang.\n     * ",
+                "operationId": "a430b7db81f2a1847a7be379bbca1d3f",
+                "parameters": [
+                    {
+                        "name": "since",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "since_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "entities",
+                        "in": "query",
+                        "description": "Vergul bilan: products,clients,suppliers,units,currencies,income_categories,expense_categories",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 500,
+                            "maximum": 1000
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/sync/status": {
+            "get": {
+                "tags": [
+                    "POS Sync"
+                ],
+                "summary": "Sinxronlash holati",
+                "description": "Kassa oxirgi marta qachon sinxronlangani va so'nggi amallar. Nosozlikni tekshirish uchun.",
+                "operationId": "20a0d6dbd9b1756b59f086989cdd5ad8",
+                "parameters": [
+                    {
+                        "name": "failed_only",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/products/lookup": {
+            "get": {
+                "tags": [
+                    "POS Catalog"
+                ],
+                "summary": "Barcode yoki kod bo'yicha mahsulot topish",
+                "description": "Skaner uchun. Avval `barcode`, keyin ichki `code` bo'yicha qidiriladi.",
+                "operationId": "b72eb81eba61066fffc0d53d3a5f288e",
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Topildi"
+                    },
+                    "404": {
+                        "description": "Topilmadi"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/terminals/register": {
+            "post": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Qurilmani ulash va token olish (jimgina)",
+                "description": "\n     * Login qilingandan keyin darhol, avtomatik chaqiriladi. Sotuvchi buni ko'rmaydi va\n     * bu yerda **hech qanday limit yo'q** — do'konga kira oladigan har bir user POS'da ham sotadi.\n     *\n     * `name` yuborilmasa, user ismi va brauzer bo'yicha o'zi qo'yiladi.\n     * Bir xil `device_id` bilan qayta chaqirish eski tokenni bekor qilib, yangisini beradi.\n     * ",
+                "operationId": "ea6ac280111f93fa4a101c9d26510d3e",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "shop_id",
+                                    "device_id"
+                                ],
+                                "properties": {
+                                    "shop_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "device_id": {
+                                        "description": "Qurilmaning barqaror identifikatori (localStorage'da saqlanadi)",
+                                        "type": "string",
+                                        "example": "web-a3f9…"
+                                    },
+                                    "name": {
+                                        "description": "Ixtiyoriy. Yuborilmasa avtomatik: 'Anvar · Chrome'",
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "default": "pdaftar_pos",
+                                        "enum": [
+                                            "pdaftar_pos",
+                                            "alipos",
+                                            "yespos",
+                                            "other"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Ulandi"
+                    },
+                    "403": {
+                        "description": "Do'konga kirish huquqi yo'q"
+                    },
+                    "422": {
+                        "description": "Validatsiya xatosi"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/terminals/manage": {
+            "get": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Do'konda POS ochgan qurilmalar ro'yxati",
+                "description": "Egasi uchun: kim, qaysi qurilmadan, qachon ulangan. Limit emas — shunchaki ko'rinish. Kerakmas qurilmani bu yerdan uzib qo'ysa bo'ladi.",
+                "operationId": "54682be917e482b3545b7239b54ea95f",
+                "parameters": [
+                    {
+                        "name": "shop_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "403": {
+                        "description": "Do'konga ruxsat yo'q"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/terminals/manage/{terminal}": {
+            "delete": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Qurilmani uzish (user tokeni bilan)",
+                "description": "Qurilma tokeni bekor qilinadi, u qayta kirishi kerak bo'ladi. Sotuv tarixi saqlanadi.",
+                "operationId": "9db20eba98b6ffbb903cc2db59693851",
+                "parameters": [
+                    {
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "O'chirildi"
+                    },
+                    "403": {
+                        "description": "Ruxsat yo'q"
+                    },
+                    "404": {
+                        "description": "Topilmadi"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/me": {
+            "get": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Joriy sotuvchi, qurilma va do'kon sozlamalari",
+                "description": "POS ishga tushganda chaqiriladi: kim sotyapti, qaysi do'kon, qanday scope'lar, valyuta va ombor sozlamalari.",
+                "operationId": "4cb07ae1b7fbc629bb12978977267e0d",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/terminals": {
+            "get": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Do'kondagi barcha qurilmalar",
+                "operationId": "b4b21726ef7ca4e70f8730d065211cb3",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        },
+        "/api/pos/v1/terminals/{terminal}": {
+            "delete": {
+                "tags": [
+                    "POS Terminal"
+                ],
+                "summary": "Qurilmani uzish (tokenini bekor qilish)",
+                "description": "Qurilma tokeni bekor qilinadi. Sotuv tarixi saqlanib qoladi.",
+                "operationId": "336667ae2f0bcd14f8301dc399f1d0e1",
+                "parameters": [
+                    {
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "O'chirildi"
+                    },
+                    "404": {
+                        "description": "Topilmadi"
+                    }
+                },
+                "security": [
+                    {
+                        "posToken": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "PosOperationResult": {
+                "title": "Amal natijasi",
+                "properties": {
+                    "client_operation_id": {
+                        "description": "OpenAPI root for the POS Integration API.\n\nThis class holds no logic — it exists so the document's Info, servers,\nsecurity scheme and shared schemas live in one place instead of being\nscattered across whichever controller happened to be written first.",
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type": {
+                        "type": "string",
+                        "example": "sale.create"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "applied",
+                            "failed"
+                        ]
+                    },
+                    "replayed": {
+                        "description": "true — bu amal avval bajarilgan, hech narsa o'zgarmadi. Kassa uni navbatdan o'chiradi.",
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "object"
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PosSaleRequest": {
+                "title": "Sotuv",
+                "required": [
+                    "client_operation_id",
+                    "currency_id",
+                    "items"
+                ],
+                "properties": {
+                    "client_operation_id": {
+                        "description": "Kassada amal bajarilgan paytda yaratiladi, yuborishda emas",
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "occurred_at": {
+                        "description": "Kassada sotuv bo'lgan vaqt (offline bo'lsa o'tmish)",
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "currency_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "client_id": {
+                        "description": "null va to'liq to'langan bo'lsa — 'Naqd xaridor' uy hisobiga yoziladi. Nasiya uchun majburiy.",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "client": {
+                        "description": "Yangi mijozni shu yerda yaratish",
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "phone_number": {
+                                "type": "string",
+                                "nullable": true
+                            }
+                        },
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "payment_type": {
+                        "description": "null = nasiya",
+                        "type": "string",
+                        "enum": [
+                            "cash",
+                            "card",
+                            "terminal",
+                            "bank_account"
+                        ],
+                        "nullable": true
+                    },
+                    "paid_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "nullable": true
+                    },
+                    "discount_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "default": 0
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "receipt_no": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "required": [
+                                "product_id",
+                                "quantity"
+                            ],
+                            "properties": {
+                                "product_id": {
+                                    "type": "integer"
+                                },
+                                "quantity": {
+                                    "type": "number",
+                                    "format": "float"
+                                },
+                                "price": {
+                                    "description": "Kassada o'zgartirilgan narx. Yuborilmasa katalog narxi olinadi.",
+                                    "type": "number",
+                                    "format": "float",
+                                    "nullable": true
+                                }
+                            },
+                            "type": "object"
+                        }
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "posToken": {
+                "type": "http",
+                "description": "Kassa tokeni — /terminals/register javobidan olinadi. Ro'yxatdan o'tish uchun oddiy pDaftar user tokeni ishlatiladi.",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "POS Terminal",
+            "description": "Kassani ro'yxatdan o'tkazish va boshqarish"
+        },
+        {
+            "name": "POS Catalog",
+            "description": "Katalogni yuklab olish (mahsulot, mijoz, ta'minotchi)"
+        },
+        {
+            "name": "POS Sales",
+            "description": "Sotuv va bekor qilish"
+        },
+        {
+            "name": "POS Write",
+            "description": "Mahsulot, mijoz, ta'minotchi, ombor, kassa amallari"
+        },
+        {
+            "name": "POS Sync",
+            "description": "Offline navbatni sinxronlash"
+        }
+    ]
+}

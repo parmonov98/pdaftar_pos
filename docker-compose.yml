@@ -1,0 +1,51 @@
+# pDaftar POS backend — its own compose project.
+#
+# Separate containers, separate port, separate lifecycle: restarting or breaking
+# the POS leaves pDaftar serving, and vice versa. That operational independence
+# is the actual reason to split the service.
+#
+# It joins pDaftar's existing network and shares its MariaDB and Redis, because
+# the POS is not a second set of books — it writes pDaftar's tables through
+# pDaftar's own domain code.
+#
+# BOTH directories are mounted. `../backend` is not a convenience: the shared
+# domain lives there, and this app cannot boot without it. /api/pos/v1/health
+# reports it plainly if the mount is missing.
+#
+#   docker compose up -d          (from pos_backend/)
+#   → http://localhost:8090/api/pos/v1/health
+
+services:
+    php-pos:
+        # Reuses the image pDaftar's php container is built from, so the PHP
+        # version and extension set cannot drift between the two apps.
+        image: pdaftar_dev-php
+        container_name: php-pos
+        working_dir: /var/www/pos_backend
+        environment:
+            - COMPOSER_ALLOW_SUPERUSER=1
+        volumes:
+            - ..:/var/www
+            - ../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+        networks:
+            - pdaftar
+
+    nginx-pos:
+        image: nginx:alpine
+        container_name: nginx-pos
+        ports:
+            - "8090:80"
+        volumes:
+            - ..:/var/www
+            - ./docker/nginx:/etc/nginx/conf.d
+        depends_on:
+            - php-pos
+        networks:
+            - pdaftar
+
+networks:
+    pdaftar:
+        # pDaftar's network, created by backend/docker-compose.yml. Declared
+        # external so this project never tries to own or delete it.
+        name: pdaftar_dev_network
+        external: true

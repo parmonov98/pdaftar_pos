@@ -1,0 +1,81 @@
+{
+    "$comment": [
+        "pDaftar POS backend — a separate Laravel application that shares ONE database",
+        "and ONE copy of pDaftar's domain code with the main backend.",
+        "",
+        "The key line is the `App\\` autoload mapping below. It points at",
+        "../backend/app, NOT at a copy. That is deliberate and it is the whole",
+        "safety argument for splitting the service at all: a POS sale is written by",
+        "pDaftar's own StoreDebtUseCase, so a POS sale and an app sale cannot drift",
+        "apart. Copying those files instead would put two versions of the sale rules",
+        "against one database, and the first time the main app changed the sale flow",
+        "the two would start disagreeing silently.",
+        "",
+        "Consequence to know: this app cannot run without ../backend present. Deploy",
+        "them together. /api/pos/v1/health checks the link and fails loudly if it is",
+        "broken."
+    ],
+    "name": "pdaftar/pos-backend",
+    "type": "project",
+    "description": "pDaftar POS Integration API",
+    "keywords": [
+        "pdaftar",
+        "pos"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "darkaonline/l5-swagger": "^9.0",
+        "irazasyed/telegram-bot-sdk": "^3.13",
+        "laravel/framework": "^12.64",
+        "laravel/sanctum": "^4.0",
+        "laravel/tinker": "^2.10",
+        "predis/predis": "^2.0",
+        "spatie/laravel-medialibrary": "^11.0",
+        "spatie/laravel-permission": "^6.21"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.23",
+        "laravel/pint": "^1.24",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.6",
+        "phpunit/phpunit": "^11.5.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "Pos\\": "app/",
+            "App\\": "../backend/app/",
+            "Database\\Factories\\": "../backend/database/factories/",
+            "Database\\Seeders\\": "../backend/database/seeders/"
+        },
+        "files": [
+            "../backend/bootstrap/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php artisan package:discover --ansi"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
