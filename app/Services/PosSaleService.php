@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\SalesCalcItem;
 use App\Models\SalesCalcList;
 use App\Models\Shop;
+use App\Models\ShopIncome;
 use App\Models\User;
 use App\Services\Stock\StockService;
 use App\UseCases\Debt\CancelDebtUseCase;
@@ -20,26 +21,36 @@ use App\UseCases\Debt\StoreDebtUseCase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Pos\Models\PosOperation;
 use Pos\Models\PosTerminal;
 
 /**
- * A till sale, written exactly where the mobile app writes one.
+ * A till sale. Two shapes, because a POS has a case pDaftar does not.
  *
- * This service builds the same three things a Sotuv in the app builds, in the
- * same order, through the same use case:
+ * pDaftar's Sotuv is a wholesaler's calculator: if the customer pays cash the
+ * seller never saves anything, so everything that IS saved is unpaid, and
+ * writing it to the debtor is right. A counter POS also has the ordinary sale —
+ * paid and done — and there is no debtor to write it to.
  *
- *   SalesCalcList (frozen)  →  SalesCalcItem lines  →  Debt via StoreDebtUseCase
+ * So:
  *
- * and StoreDebtUseCase does the rest — `sale` rows in the stock ledger attributed
- * to the Debt, a Repayment for whatever was handed over, the Kassa Kirim mirror,
- * the client balance recompute, the sales quota.
+ *   PAID IN FULL  → frozen SalesCalcList + lines, a ShopIncome in Kassa, and
+ *                   `sale` movements in the stock ledger. No debt, because
+ *                   nobody owes anything.
  *
- * Reimplementing any of that here is the one thing that must never happen. A POS
- * sale that decremented stock with its own code would be correct on the day it
- * shipped and silently wrong the first time the app's sale flow changed — and
- * the two would disagree in the reports long before anyone noticed. Going
- * through the use case means a POS sale and an app sale are indistinguishable in
- * the database, which is the whole promise of the integration.
+ *   NASIYA        → frozen SalesCalcList + lines, then Debt through pDaftar's
+ *   (or partial)    own StoreDebtUseCase, untouched. When the client settles up
+ *                   they do it in pDaftar, which writes the Repayment and
+ *                   mirrors it into Kassa then.
+ *
+ * The nasiya path deliberately reimplements nothing: stock, client balance, SMS
+ * and the sales quota all stay inside the shared use case. A POS that decremented
+ * stock with its own copy of that logic would be correct on the day it shipped
+ * and silently wrong the first time pDaftar's sale flow changed.
+ *
+ * Both paths write the frozen calc list, so the line items of every sale are
+ * queryable in one place regardless of how it was paid — Kassa's `description`
+ * is for a human to read, not to report on.
  */
 class PosSaleService {
     /**
@@ -54,6 +65,7 @@ class PosSaleService {
         private readonly CancelDebtUseCase $cancelDebt,
         private readonly StockService $stockService,
         private readonly PosWalkInClientResolver $walkIn,
+        private readonly PosCashCategoryResolver $cashCategories,
     ) {}
 
     /**
@@ -118,7 +130,7 @@ class PosSaleService {
         // no older balance to overpay into.
         $client = $this->resolveClient($user, $shop, $payload, isCredit: $this->isCredit($total, $paidAmount));
 
-        $isWalkIn = $client->name === PosWalkInClientResolver::NAME && $client->phone_number === null;
+        $isWalkIn = $this->isWalkIn($client);
         $change = 0.0;
 
         if ($isWalkIn && $paidAmount !== null && $paidAmount > $total) {
@@ -143,6 +155,48 @@ class PosSaleService {
 
         $listId = $this->writeSalesCalcSnapshot($shop, $user, $terminal, $lines, $discount, $payload);
 
+        // ─── Paid in full: this is a counter sale, not a debt ───
+        //
+        // pDaftar's Sotuv only ever writes debts, and that is correct for what it
+        // is: a wholesaler's calculator, where nothing gets saved unless the goods
+        // went out unpaid. A POS has the case pDaftar does not — the customer
+        // pays and leaves owing nothing — and forcing that through `debts` would
+        // put a row on a debtor's page for a transaction that was settled at the
+        // counter.
+        //
+        // So a paid sale goes straight to Kassa as income, which is where the
+        // money actually is. Unconditionally: the repayment mirror's
+        // `kassa_sync_repayments_enabled` toggle governs money arriving against
+        // OLD debts, and gating counter revenue behind it is why a paid POS sale
+        // was previously landing nowhere at all in most shops.
+        if (! $this->isCredit($total, $paidAmount)) {
+            return $this->recordPaidSale(
+                $terminal,
+                $user,
+                $shop,
+                $lines,
+                $listId,
+                [
+                    'subtotal' => $subtotal,
+                    'discount' => $discount,
+                    'total' => $total,
+                    'paid' => $paidAmount ?? $total,
+                    'change' => $change,
+                    'currency_id' => $currencyId,
+                    'payment_type' => $paymentType ?? ShopExpensePaymentTypeEnum::CASH->value,
+                    'note' => $payload['note'] ?? null,
+                ],
+                $client,
+                $isWalkIn,
+                $occurredAt,
+            );
+        }
+
+        // ─── Not paid in full: nasiya, exactly as pDaftar records it ───
+        //
+        // Debt via the shared use case, untouched. When the client later settles
+        // up they do it in pDaftar, which writes the Repayment and mirrors it to
+        // Kassa then — that half is deliberately none of the POS's business.
         try {
             $debt = $this->storeDebt->execute(
                 StoreDebtDTO::fromArray([
@@ -177,6 +231,7 @@ class PosSaleService {
         }
 
         return [
+            'kind' => 'debt',
             'sale_id' => $debt->id,
             'debt_id' => $debt->id,
             'sales_calc_list_id' => $listId,
@@ -204,6 +259,131 @@ class PosSaleService {
     }
 
     /**
+     * A settled counter sale: money into Kassa, stock out of the ledger, no debt.
+     *
+     * @param  list<array{product: Product, quantity: float, price: float, total: float, name: string}>  $lines
+     * @param  array<string, mixed>  $money
+     * @return array<string, mixed>
+     */
+    private function recordPaidSale(
+        PosTerminal $terminal,
+        User $user,
+        Shop $shop,
+        array $lines,
+        int $listId,
+        array $money,
+        Client $client,
+        bool $isWalkIn,
+        ?Carbon $occurredAt,
+    ): array {
+        $date = $this->businessDate($occurredAt) ?? now()->format('Y-m-d H:i:s');
+
+        try {
+            $income = DB::transaction(function () use ($user, $shop, $lines, $listId, $money, $client, $isWalkIn, $date) {
+                $income = ShopIncome::create([
+                    'shop_id' => $shop->id,
+                    'amount' => $money['total'],
+                    'currency_id' => $money['currency_id'],
+                    'shop_income_category_id' => $this->cashCategories->posSales((int) $shop->id),
+                    'description' => $this->saleDescription($lines, $money, $client, $isWalkIn),
+                    'payment_type' => $money['payment_type'],
+                    'created_by_id' => $user->id,
+                    // `shop_incomes` has no transaction-date column of its own —
+                    // created_at IS the date the Kassa list groups and totals by
+                    // (see ShopIncomeSyncService). An offline sale synced two days
+                    // late must therefore carry the day it happened, or Kassa's
+                    // "Bugun" is over by it and the real day is short.
+                    'created_at' => $date,
+                    'updated_at' => $date,
+                ]);
+
+                // Stock is attributed to the frozen calc list rather than to the
+                // income row: the list holds the line items, so a reversal and the
+                // "what price did this go out at?" lookup both have something to
+                // read. The income row is money, and money does not know what a
+                // kilogram of anything cost.
+                $list = SalesCalcList::find($listId);
+
+                foreach ($lines as $line) {
+                    $this->stockService->recordSale(
+                        $line['product'],
+                        $line['quantity'],
+                        // A till reports what already happened — see the note on
+                        // StoreDebtUseCase::$forceAllowNegativeStock.
+                        allowNegative: true,
+                        source: $list,
+                        createdById: $user->id,
+                    );
+                }
+
+                return $income;
+            });
+        } catch (\Throwable $e) {
+            SalesCalcList::whereKey($listId)->delete();
+            SalesCalcItem::where('sales_calc_list_id', $listId)->forceDelete();
+
+            throw $e;
+        }
+
+        return [
+            'kind' => 'income',
+            'sale_id' => $income->id,
+            'income_id' => $income->id,
+            'debt_id' => null,
+            'sales_calc_list_id' => $listId,
+            'client_id' => $isWalkIn ? null : $client->id,
+            'client_name' => $isWalkIn ? null : $client->name,
+            'currency_id' => $money['currency_id'],
+            'subtotal' => $money['subtotal'],
+            'discount_amount' => $money['discount'],
+            'total' => $money['total'],
+            'paid_amount' => $money['paid'],
+            'payment_type' => $money['payment_type'],
+            'change' => $money['change'],
+            'is_credit' => false,
+            'created_at' => Carbon::parse($date)->toIso8601String(),
+            'stock' => $this->stockSnapshot($lines),
+        ];
+    }
+
+    /**
+     * What the shopkeeper reads in Kassa.
+     *
+     * `shop_incomes` has no line-item table — only this free-text field — so the
+     * products go in here or they are not visible in Kassa at all. The structured
+     * copy still exists on the frozen calc list for anything that needs to query
+     * it; this is the human-readable half.
+     *
+     * @param  list<array{product: Product, quantity: float, price: float, total: float, name: string}>  $lines
+     * @param  array<string, mixed>  $money
+     */
+    private function saleDescription(array $lines, array $money, Client $client, bool $isWalkIn): string {
+        $items = array_map(
+            fn (array $l) => trim(($l['name'] !== '' ? $l['name'] : '#'.$l['product']->id)
+                .' × '.$this->formatNumber($l['quantity'])),
+            $lines,
+        );
+
+        $parts = [implode(', ', $items)];
+
+        if ($money['discount'] > 0) {
+            $parts[] = 'Chegirma: '.number_format((float) $money['discount'], 0, '.', ' ');
+        }
+
+        // Optional by design: most counter sales are a stranger paying cash, and
+        // writing the house account's name on every one of them would be noise.
+        if (! $isWalkIn) {
+            $parts[] = 'Mijoz: '.$client->name;
+        }
+
+        if (filled($money['note'] ?? null)) {
+            $parts[] = (string) $money['note'];
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
      * Undo a till sale.
      *
      * Delegates to CancelDebtUseCase, which reverses the stock movements via
@@ -215,33 +395,130 @@ class PosSaleService {
      *
      * @throws BusinessException
      */
-    public function cancel(PosTerminal $terminal, User $user, int $debtId): array {
-        /** @var Debt|null $debt */
-        $debt = Debt::query()->find($debtId);
+    public function cancel(PosTerminal $terminal, User $user, int $saleId, ?string $kind = null): array {
+        // A paid sale and a nasiya sale live in different tables and their ids
+        // are independent sequences, so the caller says which. `kind` comes
+        // straight from the sale response the till stored; the fallback tries
+        // Kassa first because that is the common case at a counter.
+        $tryIncome = $kind === null || $kind === 'income';
+        $tryDebt = $kind === null || $kind === 'debt';
 
-        if ($debt === null || (int) $debt->shop_id !== (int) $terminal->shop_id) {
-            throw new BusinessException('Sotuv topilmadi');
+        if ($tryIncome) {
+            /** @var ShopIncome|null $income */
+            $income = ShopIncome::query()
+                ->where('shop_id', $terminal->shop_id)
+                ->whereKey($saleId)
+                ->first();
+
+            if ($income !== null) {
+                return $this->cancelPaidSale($terminal, $income);
+            }
         }
 
-        $this->cancelDebt->execute($debt->id, $user);
+        if ($tryDebt) {
+            /** @var Debt|null $debt */
+            $debt = Debt::query()->find($saleId);
 
-        $productIds = SalesCalcItem::query()
-            ->where('sales_calc_list_id', $debt->sales_calc_list_id)
+            if ($debt !== null && (int) $debt->shop_id === (int) $terminal->shop_id) {
+                $this->cancelDebt->execute($debt->id, $user);
+
+                return [
+                    'kind' => 'debt',
+                    'sale_id' => $debt->id,
+                    'cancelled' => true,
+                    'stock' => $this->stockFor($this->productIdsOfList((int) $debt->sales_calc_list_id)),
+                ];
+            }
+        }
+
+        throw new BusinessException('Sotuv topilmadi');
+    }
+
+    /**
+     * Undo a paid counter sale: the Kassa income goes, the stock comes back.
+     *
+     * The income is soft-deleted rather than hard, so a cancelled sale is still
+     * traceable — a till that cancels the wrong receipt is a support question,
+     * and a row that vanished answers nothing.
+     *
+     * @return array<string, mixed>
+     */
+    private function cancelPaidSale(PosTerminal $terminal, ShopIncome $income): array {
+        // `shop_incomes` has no column pointing at the calc list, but the POS's
+        // own operation log does: the stored response of the sale that created
+        // this income carries `sales_calc_list_id`. Exact, and POS-owned — no
+        // guessing by timestamp and no new column on a pDaftar table.
+        $listId = $this->listIdOfIncome($income);
+
+        if ($listId === null) {
+            throw new BusinessException(
+                'Bu kirim POS sotuvi emas yoki uning qatorlari topilmadi — Kassadan qo\'lda o\'chiring.'
+            );
+        }
+
+        $productIds = $this->productIdsOfList($listId);
+
+        DB::transaction(function () use ($income, $listId) {
+            $list = SalesCalcList::find($listId);
+
+            // reverseFor DELETES the movements that caused the change rather
+            // than writing compensating ones, so the product's history reads as
+            // if the sale never happened instead of as a purchase the shop
+            // never made.
+            if ($list !== null) {
+                $this->stockService->reverseFor($list);
+            }
+
+            // Soft delete: a cancelled sale must stay traceable. A till that
+            // voided the wrong receipt is a support question, and a row that
+            // vanished answers nothing.
+            $income->delete();
+        });
+
+        return [
+            'kind' => 'income',
+            'sale_id' => $income->id,
+            'cancelled' => true,
+            'stock' => $this->stockFor($productIds),
+        ];
+    }
+
+    private function listIdOfIncome(ShopIncome $income): ?int {
+        $response = PosOperation::query()
+            ->where('shop_id', $income->shop_id)
+            ->where('type', 'sale.create')
+            ->where('entity_type', ShopIncome::class)
+            ->where('entity_id', $income->id)
+            ->value('response');
+
+        $listId = is_array($response) ? ($response['sales_calc_list_id'] ?? null) : null;
+
+        return is_numeric($listId) ? (int) $listId : null;
+    }
+
+    /** @return list<int> */
+    private function productIdsOfList(int $listId): array {
+        return SalesCalcItem::query()
+            ->where('sales_calc_list_id', $listId)
             ->whereNotNull('product_id')
             ->pluck('product_id')
             ->unique()
+            ->map(fn ($id) => (int) $id)
+            ->values()
             ->all();
+    }
 
-        $stock = $this->stockService->stockFor(array_map('intval', $productIds));
+    /**
+     * @param  list<int>  $productIds
+     * @return list<array{product_id: int, quantity: float|null}>
+     */
+    private function stockFor(array $productIds): array {
+        $stock = $this->stockService->stockFor($productIds);
 
-        return [
-            'sale_id' => $debt->id,
-            'cancelled' => true,
-            'stock' => array_map(
-                fn ($id) => ['product_id' => (int) $id, 'quantity' => $stock[$id] ?? null],
-                $productIds,
-            ),
-        ];
+        return array_map(
+            fn (int $id) => ['product_id' => $id, 'quantity' => $stock[$id] ?? null],
+            $productIds,
+        );
     }
 
     /**
@@ -275,6 +552,16 @@ class PosSaleService {
                 ]);
             }
 
+            // The house account is reachable by id like any other client, so the
+            // "nasiya needs a real client" rule has to be checked here too and
+            // not only on the no-client-given path. A credit sale booked against
+            // it is a receivable with nobody to collect from.
+            if ($isCredit && $this->isWalkIn($client)) {
+                throw ValidationException::withMessages([
+                    'client_id' => ['Nasiya sotuvni "'.PosWalkInClientResolver::NAME.'" hisobiga yozib bo\'lmaydi — haqiqiy mijoz tanlang'],
+                ]);
+            }
+
             return $client;
         }
 
@@ -297,6 +584,11 @@ class PosSaleService {
         }
 
         return $this->walkIn->resolve($shop, $user->id);
+    }
+
+    /** The shop's anonymous cash-sale account, not a customer anyone chose. */
+    private function isWalkIn(Client $client): bool {
+        return $client->name === PosWalkInClientResolver::NAME && $client->phone_number === null;
     }
 
     private function isCredit(float $total, ?float $paidAmount): bool {

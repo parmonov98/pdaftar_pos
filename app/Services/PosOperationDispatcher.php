@@ -209,13 +209,21 @@ class PosOperationDispatcher {
     ): array {
         $data = $this->sales->create($terminal, $user, $payload, $occurredAt);
 
-        return [
-            'data' => $data,
-            // Linked so pos_operations can answer "which sale did this
-            // operation become?". Without it a support request holding only a
-            // client_operation_id — which is all the till knows — dead-ends.
-            'entity' => Debt::query()->find($data['sale_id']),
-        ];
+        // Linked so pos_operations can answer "which row did this operation
+        // become?" — without it a support request holding only a
+        // client_operation_id, which is all the till knows, dead-ends. It is
+        // also how cancelling a paid sale finds its calc list, since
+        // shop_incomes has no column pointing at one.
+        //
+        // The two kinds live in different tables with independent id sequences,
+        // so this MUST follow `kind`. Looking a paid sale's id up in `debts`
+        // would attach the operation to an unrelated debt that happens to share
+        // the number.
+        $entity = $data['kind'] === 'income'
+            ? ShopIncome::query()->find($data['sale_id'])
+            : Debt::query()->find($data['sale_id']);
+
+        return ['data' => $data, 'entity' => $entity];
     }
 
     private function saleCancel(PosTerminal $terminal, User $user, array $payload): array {
@@ -225,9 +233,16 @@ class PosOperationDispatcher {
             throw ValidationException::withMessages(['sale_id' => ['sale_id talab qilinadi']]);
         }
 
+        $kind = $payload['kind'] ?? null;
+        $kind = in_array($kind, ['income', 'debt'], true) ? $kind : null;
+
+        $data = $this->sales->cancel($terminal, $user, $saleId, $kind);
+
         return [
-            'data' => $this->sales->cancel($terminal, $user, $saleId),
-            'entity' => Debt::query()->find($saleId),
+            'data' => $data,
+            'entity' => ($data['kind'] ?? null) === 'income'
+                ? ShopIncome::query()->find($saleId)
+                : Debt::query()->find($saleId),
         ];
     }
 

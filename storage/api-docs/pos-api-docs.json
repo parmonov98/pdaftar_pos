@@ -757,7 +757,7 @@
                     "POS Sales"
                 ],
                 "summary": "Do'konning so'nggi sotuvlari",
-                "description": "Barcha sotuvchilarning sotuvlari, eng yangisi birinchi. Kassaning o'z navbati emas — bu serverdagi haqiqiy tarix.",
+                "description": "\n     * Naqd sotuvlar Kassadan (`shop_incomes`), nasiya sotuvlar qarzlardan (`debts`) o'qiladi va\n     * birlashtiriladi. `kind` maydoni qaysi biri ekanini aytadi.\n     *\n     * Kassaning o'z navbati emas — bu serverdagi haqiqiy tarix, boshqa sotuvchining sotuvlari ham.\n     * ",
                 "operationId": "1d3e855eea63fc6dd7c1d0ea73e1e91b",
                 "parameters": [
                     {

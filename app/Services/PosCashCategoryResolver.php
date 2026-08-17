@@ -34,6 +34,36 @@ class PosCashCategoryResolver {
 
     private const EXPENSE_NAME = 'Kassa (POS)';
 
+    /**
+     * Where a paid POS sale's money lands in Kassa.
+     *
+     * Its own category, not the shop's `is_sales_default` one ("Mijozdan
+     * kirim"). That category is the target of the automatic repayment mirror —
+     * money a client handed over against an older debt — and a shop reading
+     * "how much came in from debtors this week?" must not have counter sales
+     * folded into the answer.
+     */
+    public function posSales(int $shopId): int {
+        return DB::transaction(function () use ($shopId) {
+            $existing = ShopIncomeCategory::query()
+                ->where('shop_id', $shopId)
+                ->where('name', self::SALES_NAME)
+                ->value('id');
+
+            if ($existing !== null) {
+                return (int) $existing;
+            }
+
+            return ShopIncomeCategory::create([
+                'shop_id' => $shopId,
+                'name' => self::SALES_NAME,
+                'color' => '#1E88E5',
+            ])->id;
+        });
+    }
+
+    private const SALES_NAME = 'POS savdo';
+
     public function income(int $shopId, mixed $requestedId): int {
         if ($requestedId !== null) {
             return $this->assertOwned(
