@@ -8,19 +8,29 @@ Qoldiq har doim serverdagi `stock_movements` ledgeridan keladi.
 
 ## Ishga tushirish (lokal)
 
-Backend Dockerda ishlab turishi kerak (`backend/` papkasida `docker compose up -d`,
-API `http://localhost:8083`).
+Ikkita backend ishlab turishi kerak:
+
+| Servis | Port | Nima uchun |
+|---|---|---|
+| `backend/` | 8083 | Login va do'konlar ro'yxati (pDaftar) |
+| `pos_backend/` | 8090 | POS API — sotuv, katalog, sinxronlash |
+
+```bash
+cd ../backend      && docker compose up -d
+cd ../pos_backend  && docker compose up -d
+```
 
 ```bash
 npm install
 npm run dev          # http://localhost:5174
 ```
 
-Vite `/api` ni backendga proxy qiladi, shuning uchun CORS muammosi yo'q.
-Boshqa manzil kerak bo'lsa:
+Vite ikkita servisga proxy qiladi, shuning uchun CORS muammosi yo'q:
+`/api/pos` → 8090, qolgan `/api` → 8083. Boshqa manzil kerak bo'lsa:
 
 ```bash
-POS_API_TARGET=http://192.168.1.50:8083 npm run dev
+POS_API_TARGET=http://192.168.1.50:8090 \
+PDAFTAR_API_TARGET=http://192.168.1.50:8083 npm run dev
 ```
 
 Boshqa buyruqlar:
@@ -137,6 +147,8 @@ belgilab qo'yardi.
 
 ## API hujjati
 
-Swagger: http://localhost:8083/api/documentation/pos
+Swagger: http://localhost:8090/api/documentation/pos
 
-Backend kodi: `backend/routes/pos_api.php`, `backend/app/Services/Pos/`.
+Backend kodi: `pos_backend/` (alohida servis, `pos_backend/README.md` ga qarang).
+Sotuv mantiqi esa pDaftarda qoladi — POS uni nusxalamaydi, `backend/app` dan
+o'qiydi.

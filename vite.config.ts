@@ -46,8 +46,18 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
+      // The POS backend is its own service now, on its own port. Everything
+      // under /api/pos goes there.
+      '/api/pos': {
+        target: process.env.POS_API_TARGET ?? 'http://localhost:8090',
+        changeOrigin: true,
+      },
+      // Login and the shop list are still pDaftar's — the POS deliberately does
+      // not reimplement authentication, it exchanges a pDaftar user token for a
+      // device token. More specific rules are matched first, so this only picks
+      // up what /api/pos did not.
       '/api': {
-        target: process.env.POS_API_TARGET ?? 'http://localhost:8083',
+        target: process.env.PDAFTAR_API_TARGET ?? 'http://localhost:8083',
         changeOrigin: true,
       },
     },
