@@ -283,6 +283,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   border-radius: 999px; padding: 2px 8px; margin-left: 8px; font-weight: 500;
 }
 .tag.danger { color: var(--danger-text); border-color: var(--danger-line); }
+.tag.ok { color: var(--ok-text); border-color: var(--ok-line); }
 .tag.warn { color: var(--warn-text); border-color: var(--warn-line); }
 
 .hist-row { border-bottom: 1px solid var(--line); }

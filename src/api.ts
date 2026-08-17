@@ -300,15 +300,25 @@ export function fetchSyncStatus(): Promise<{
 }
 
 export type RecentSale = {
+  /**
+   * Which table the sale lives in, and therefore what it means:
+   * `income` — paid at the counter, money in Kassa, nobody owes anything.
+   * `debt`   — nasiya, the customer owes it.
+   */
+  kind: 'income' | 'debt'
   id: number
   total: number
   paid_amount: number
   is_credit: boolean
+  discount_amount: number
   currency_id: number | null
+  payment_type: string | null
   client_name: string | null
   client_phone: string | null
   seller_name: string | null
   is_cancelled: boolean
+  /** Kassa's free-text line: products, quantities, discount. */
+  description: string | null
   created_at: string | null
   items: Array<{ product_id: number; name: string | null; quantity: number | null; total: number }>
 }

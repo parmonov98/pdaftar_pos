@@ -85,9 +85,16 @@ export function History() {
             >
               <span className="grow">
                 <span className="nm">
-                  #{sale.id} · {sale.client_name ?? '—'}
+                  {/* Paid and nasiya are different events, not different states
+                      of one — the badge says which before anything else. */}
+                  {sale.kind === 'income' ? (
+                    <span className="tag ok">naqd</span>
+                  ) : (
+                    <span className="tag warn">nasiya</span>
+                  )}
+                  {' '}
+                  {sale.client_name ?? 'Naqd xaridor'}
                   {sale.is_cancelled && <span className="tag danger">bekor qilingan</span>}
-                  {!sale.is_cancelled && sale.is_credit && <span className="tag warn">nasiya</span>}
                 </span>
                 <span className="sub">
                   {sale.seller_name ?? '—'}
@@ -95,6 +102,7 @@ export function History() {
                   {sale.created_at ? new Date(sale.created_at).toLocaleString('uz-UZ') : '—'}
                   {' · '}
                   {sale.items.length} qator
+                  {sale.discount_amount > 0 && ` · chegirma ${formatMoney(sale.discount_amount)}`}
                 </span>
               </span>
               <span className="amt">{formatMoney(sale.total)}</span>
