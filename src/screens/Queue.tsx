@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type OutboxItem } from '../db'
+import { receiptOf, type Receipt } from '../receipt'
+import { ReceiptView } from './Receipt'
 
 const STATUS_LABELS: Record<OutboxItem['status'], string> = {
   queued: 'Navbatda',
@@ -23,6 +26,7 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
     [] as OutboxItem[],
   )
 
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
   const errored = items.filter((i) => i.status === 'error')
   const waiting = items.filter((i) => i.status === 'queued' || i.status === 'failed')
 
@@ -57,6 +61,14 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
             </div>
             {item.error && <div className="err">{item.error}</div>}
           </div>
+          {/* The receipt matters MOST here: a sale still in the queue has
+              already happened at the counter, and the customer wants paper for
+              it whether or not the server has heard about it yet. */}
+          {receiptOf(item) && (
+            <button className="ghost" onClick={() => setReceipt(receiptOf(item))} title="Chek">
+              🧾
+            </button>
+          )}
           {item.status !== 'sent' && (
             <button className="danger ghost" onClick={() => discard(item)}>
               O'chirish
@@ -81,6 +93,7 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
           {waiting.length} ta kutmoqda · {errored.length} ta tekshirish kerak
         </div>
         <div className="view-body">{body}</div>
+        {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
       </div>
     )
   }
@@ -95,6 +108,7 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
             Yopish
           </button>
         </div>
+        {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
       </div>
     </div>
   )

@@ -84,6 +84,15 @@ export type OutboxItem = {
   result: Record<string, unknown> | null
   /** Human label for the queue list, so a pending row is readable without decoding the payload. */
   label: string
+  /**
+   * Printable snapshot, on sale rows only.
+   *
+   * Kept here because the product NAMES exist nowhere else once the sale
+   * closes — the payload carries ids and the draft that held the names is
+   * gone. Without it a receipt could not be reprinted, least of all for a sale
+   * that never reached the server.
+   */
+  receipt?: import('./receipt').Receipt
   created_at: string
 }
 

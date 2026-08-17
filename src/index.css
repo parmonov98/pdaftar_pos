@@ -492,3 +492,71 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .qrow .st.failed { color: var(--danger-text); }
 .qrow .st.error { color: var(--accent-fg); background: var(--danger); border-color: var(--danger); }
 .qrow .err { color: var(--danger-text); font-size: 12px; margin-top: 3px; }
+
+/* ─── Receipt ───
+ *
+ * Two lives: a preview inside a modal, and the only thing on the page when the
+ * browser prints. Sized in mm throughout so 58mm and 80mm thermal paper both
+ * come out correct, and monospaced so the amount column lines up — a receipt
+ * whose numbers wander is hard to read at a counter.
+ */
+.receipt-modal { max-width: 420px; }
+
+.receipt {
+  background: #fff;
+  color: #000;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 6mm 4mm;
+  margin: 0 auto;
+  border-radius: 6px;
+}
+.receipt.paper-58mm { width: 58mm; }
+.receipt.paper-80mm { width: 80mm; }
+
+.receipt .r-center { text-align: center; }
+.receipt .r-shop { font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
+.receipt .r-sub { font-size: 10.5px; }
+.receipt .r-tiny { font-size: 9px; margin-top: 1mm; }
+
+/* Dashes, not a solid rule: thermal heads print a filled line as a smear. */
+.receipt .r-rule { border-top: 1px dashed #000; margin: 2mm 0; }
+
+.receipt .r-line { margin-bottom: 1.5mm; }
+.receipt .r-name { word-break: break-word; }
+.receipt .r-calc { display: flex; justify-content: space-between; gap: 4mm; }
+
+.receipt .r-row { display: flex; justify-content: space-between; gap: 4mm; }
+.receipt .r-total { font-size: 13px; font-weight: 700; margin: 1mm 0; }
+
+.check-row {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text); font-size: 13.5px; margin-bottom: 13px;
+}
+.check-row input { width: auto; }
+
+@media print {
+  /* Everything except the receipt is hidden rather than unmounted, so closing
+     the print dialog leaves the app exactly as it was. */
+  body * { visibility: hidden !important; }
+  #pos-receipt, #pos-receipt * { visibility: visible !important; }
+
+  .overlay { position: static !important; background: none !important; padding: 0 !important; }
+  .modal { border: none !important; background: none !important; padding: 0 !important; max-width: none !important; }
+  .no-print { display: none !important; }
+
+  #pos-receipt {
+    position: absolute; left: 0; top: 0;
+    width: auto !important; border-radius: 0; padding: 0 2mm;
+  }
+
+  @page { margin: 3mm; }
+}
+
+/* The reprint button sits alongside the row, not inside its expand button —
+   nesting one button in another is invalid and swallows the click. */
+.hist-row { display: flex; align-items: flex-start; }
+.hist-row .hist-main { flex: 1; }
+.hist-print { align-self: center; margin-right: 10px; font-size: 16px; padding: 6px 10px; }
+.hist-items { flex-basis: 100%; }

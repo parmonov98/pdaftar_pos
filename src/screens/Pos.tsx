@@ -21,6 +21,8 @@ import { Drawer, type View } from './Drawer'
 import { History } from './History'
 import { ProductSearch } from './ProductSearch'
 import { Queue } from './Queue'
+import { ReceiptView } from './Receipt'
+import { attachReceipt, receiptFromSale, type Receipt } from '../receipt'
 
 const QUICK_DISCOUNTS = [5, 10, 15, 20]
 
@@ -51,6 +53,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [checkout, setCheckout] = useState(false)
   const [clientPicker, setClientPicker] = useState(false)
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
 
   const [theme, setThemeState] = useState<Theme>(getTheme)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err' | 'warn'; text: string } | null>(null)
@@ -257,11 +260,27 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   async function confirmSale(payment: Omit<Payment, 'discount' | 'clientId'>) {
     if (!active) return
 
+    // Snapshot the cart BEFORE it is cleared — the receipt needs the product
+    // names, and they live nowhere else once the draft closes.
+    const printed = [...cart]
+
     const outcome = await submitSale(
       cart,
       { ...payment, discount, clientId: active.clientId },
       currencyId,
     )
+
+    const slip = receiptFromSale(outcome, printed, {
+      shopName: me.shop.name,
+      sellerName: me.user.name ?? me.user.phone_number ?? '—',
+      clientName: active.clientName,
+      currency: currencyCode(currencyId),
+      paymentType: payment.paymentType,
+      discount,
+      isCredit: payment.paidAmount < total,
+    })
+
+    await attachReceipt(outcome.seq, slip)
 
     // The finished tab is closed rather than emptied: a seller who rang up a
     // sale is done with that customer, and an empty tab left behind would
@@ -272,6 +291,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
     setCheckout(false)
     setPending(await pendingCount())
+    setReceipt(slip)
 
     if (outcome.synced) {
       const change = outcome.change > 0 ? ` · Qaytim: ${formatMoney(outcome.change)}` : ''
@@ -349,7 +369,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
         onLogout={onLogout}
       />
 
-      {view === 'history' && <History />}
+      {view === 'history' && <History me={me} />}
       {view === 'clients' && <Clients />}
       {view === 'products' && <Products />}
       {view === 'devices' && <Devices me={me} />}
@@ -667,6 +687,8 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
           onClose={() => setClientPicker(false)}
         />
       )}
+
+      {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
 }

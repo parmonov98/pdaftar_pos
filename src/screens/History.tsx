@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchRecentSales, type RecentSale } from '../api'
+import { fetchRecentSales, type MeResponse, type RecentSale } from '../api'
 import { formatMoney } from '../sales'
+import { receiptFromHistory, type Receipt } from '../receipt'
+import { ReceiptView } from './Receipt'
 
 /**
  * What the shop sold, newest first.
@@ -10,12 +12,13 @@ import { formatMoney } from '../sales'
  * the other till ring up, did the morning's sales land. Offline it says so
  * plainly instead of showing a partial list that reads as complete.
  */
-export function History() {
+export function History({ me }: { me: MeResponse }) {
   const [sales, setSales] = useState<RecentSale[]>([])
   const [mineOnly, setMineOnly] = useState(false)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -108,6 +111,23 @@ export function History() {
               <span className="amt">{formatMoney(sale.total)}</span>
             </button>
 
+            {/* Reprint. Works for another seller's sale too — the lines come
+                from the server, so this device never saw them. */}
+            <button
+              className="ghost hist-print"
+              onClick={() =>
+                setReceipt(
+                  receiptFromHistory(sale, {
+                    shopName: me.shop.name,
+                    currency: '',
+                  }),
+                )
+              }
+              title="Chekni qayta chiqarish"
+            >
+              🧾
+            </button>
+
             {expanded === sale.id && (
               <div className="hist-items">
                 {sale.items.map((item, i) => (
@@ -130,6 +150,8 @@ export function History() {
           </div>
         ))}
       </div>
+
+      {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
 }

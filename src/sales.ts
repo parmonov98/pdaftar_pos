@@ -40,6 +40,8 @@ export type Payment = {
 
 export type SaleOutcome = {
   clientOperationId: string
+  /** Outbox row id, so the printable receipt can be stored against the sale. */
+  seq: number
   total: number
   change: number
   /** false when the sale is sitting in the outbox waiting for a connection. */
@@ -114,7 +116,15 @@ export async function submitSale(
 
   const change = payment.paidAmount > total ? round2(payment.paidAmount - total) : 0
 
-  return { clientOperationId: item.client_operation_id, total, change, synced, serverData, error }
+  return {
+    clientOperationId: item.client_operation_id,
+    seq: item.seq!,
+    total,
+    change,
+    synced,
+    serverData,
+    error,
+  }
 }
 
 /**

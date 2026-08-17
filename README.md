@@ -74,6 +74,26 @@ aniq moslik darrov qo'shiladi va maydon tozalanadi.
 O'ng tomonda butun savdoga tegishli qarorlar: mijoz, valyuta, chegirma (% yoki summa),
 jami va to'lov tugmasi.
 
+## Chek
+
+POS'ning **o'z cheki** — pDaftarning nakladnoyi bilan aralashtirilmagan. U mobil
+ilovaning optom oqimi uchun, serverda `Debt`dan PDF qilib chiziladi; naqd sotuvda
+esa `Debt` yo'q.
+
+Chek **brauzerda** yasaladi, serverdan olinmaydi. Sababi bitta va u hal qiluvchi:
+**oflayn qilingan sotuvga ham chek kerak**. Serverda chizilgan chek sotuv
+sinxronlanmaguncha mavjud bo'lmaydi, bu esa bir necha soat bo'lishi mumkin.
+
+- Sotuv yakunlangach chek darrov chiqadi (avtomat chiqarishni yoqib qo'ysa bo'ladi)
+- Qog'oz kengligi 58mm / 80mm — qurilma bo'yicha saqlanadi (printer mashinaga tegishli)
+- Chekni qayta chiqarish: **Tarix** (server ma'lumotidan, boshqa sotuvchining
+  sotuvi ham) va **Navbat** (lokal nusxadan — yuborilmagan sotuv uchun eng kerakli)
+- Yuborilmagan sotuv cheki raqami `L-XXXXXXXX` — server hali raqam bermagan,
+  shuning uchun sotuv raqami bilan aralashmasin
+- Bosib chiqarish brauzer orqali: kassada termoprinter tizim printeri sifatida
+  o'rnatilgan bo'ladi. ESC/POS ko'prigi qurilmaga qo'shimcha dastur talab qiladi
+  va printer o'zgarganda ishlamay qoladi
+
 ## Offline qanday ishlaydi
 
 **Har bir yozuv avval navbatga yoziladi, keyin yuboriladi** — internet bor-yo'qligidan
