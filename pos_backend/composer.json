@@ -1,19 +1,21 @@
 {
     "$comment": [
-        "pDaftar POS backend — a separate Laravel application that shares ONE database",
-        "and ONE copy of pDaftar's domain code with the main backend.",
+        "pDaftar POS — a monorepo holding the POS backend and the till frontend.",
         "",
-        "The key line is the `App\\` autoload mapping below. It points at",
-        "../backend/app, NOT at a copy. That is deliberate and it is the whole",
-        "safety argument for splitting the service at all: a POS sale is written by",
-        "pDaftar's own StoreDebtUseCase, so a POS sale and an app sale cannot drift",
-        "apart. Copying those files instead would put two versions of the sale rules",
-        "against one database, and the first time the main app changed the sale flow",
-        "the two would start disagreeing silently.",
+        "The key line is the `App\\` autoload mapping below. It points at pDaftar's",
+        "backend, NOT at a copy, so a POS sale is written by pDaftar's own",
+        "StoreDebtUseCase and the two cannot drift apart. Copying those files would",
+        "put two versions of the sale rules against one database.",
         "",
-        "Consequence to know: this app cannot run without ../backend present. Deploy",
-        "them together. /api/pos/v1/health checks the link and fails loudly if it is",
-        "broken."
+        "CONSEQUENCE: this repository does not run on its own. pdaftar.backend must",
+        "be checked out as a SIBLING of this repository:",
+        "",
+        "    parent/",
+        "      backend/       <- git clone pdaftar.backend",
+        "      pdaftar_pos/   <- this repo",
+        "",
+        "`php artisan pos:health` and GET /api/pos/v1/health check the link and say",
+        "so plainly when it is missing."
     ],
     "name": "pdaftar/pos-backend",
     "type": "project",
@@ -44,12 +46,12 @@
     "autoload": {
         "psr-4": {
             "Pos\\": "app/",
-            "App\\": "../backend/app/",
-            "Database\\Factories\\": "../backend/database/factories/",
-            "Database\\Seeders\\": "../backend/database/seeders/"
+            "App\\": "../../backend/app/",
+            "Database\\Factories\\": "../../backend/database/factories/",
+            "Database\\Seeders\\": "../../backend/database/seeders/"
         },
         "files": [
-            "../backend/bootstrap/helpers.php"
+            "../../backend/bootstrap/helpers.php"
         ]
     },
     "autoload-dev": {

@@ -75,7 +75,7 @@ class PosIntegrityService {
             $missing === [],
             $missing === []
                 ? 'pDaftar domeni yuklandi'
-                : 'Topilmadi: '.implode(', ', $missing).'. ../backend joyidami?',
+                : 'Topilmadi: '.implode(', ', $missing).'. pdaftar.backend shu repo yonida (sibling) turibdimi?',
         );
     }
 

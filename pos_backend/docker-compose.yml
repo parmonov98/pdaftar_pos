@@ -12,7 +12,7 @@
 # domain lives there, and this app cannot boot without it. /api/pos/v1/health
 # reports it plainly if the mount is missing.
 #
-#   docker compose up -d          (from pos_backend/)
+#   docker compose up -d          (from pdaftar_pos/pos_backend/)
 #   → http://localhost:8090/api/pos/v1/health
 
 services:
@@ -21,12 +21,14 @@ services:
         # version and extension set cannot drift between the two apps.
         image: pdaftar_dev-php
         container_name: php-pos
-        working_dir: /var/www/pos_backend
+        working_dir: /var/www/pdaftar_pos/pos_backend
         environment:
             - COMPOSER_ALLOW_SUPERUSER=1
         volumes:
-            - ..:/var/www
-            - ../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+            # The GRANDparent: this repo and pdaftar.backend are siblings, and
+            # the shared domain lives in the other one.
+            - ../..:/var/www
+            - ../../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
         networks:
             - pdaftar
 
@@ -36,7 +38,7 @@ services:
         ports:
             - "8090:80"
         volumes:
-            - ..:/var/www
+            - ../..:/var/www
             - ./docker/nginx:/etc/nginx/conf.d
         depends_on:
             - php-pos
