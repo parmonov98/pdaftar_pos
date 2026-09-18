@@ -43,6 +43,17 @@ yonida (sibling) turibdimi?`
 
 ## Ishga tushirish
 
+Yangi klonda bitta buyruq yetarli — u yuqoridagi sibling'ni ham o'zi klon qiladi:
+
+```bash
+./scripts/setup.sh
+```
+
+Skript takror ishga tushirishga xavfsiz: har bir qadam avval tekshiradi.
+Docker'siz, faqat bog'liqliklarni o'rnatish uchun `./scripts/setup.sh --no-docker`.
+
+Qo'lda qilmoqchi bo'lsangiz:
+
 ```bash
 # 1. pDaftar backendi (baza va Redis shundan)
 cd ../backend && docker compose up -d
@@ -90,3 +101,33 @@ git pull && php artisan pos:health && systemctl reload php-fpm
 ```
 
 `pos:health` xato bo'lsa exit kodi 1 qaytaradi, shuning uchun reliz to'xtaydi.
+
+## CI
+
+`.github/workflows/ci.yml` har PR'da uch ishni bajaradi:
+
+| Ish | Nima qiladi | pdaftar.backend kerakmi |
+|---|---|---|
+| `pos` | oxlint + `tsc` + vite build | yo'q |
+| `pos_backend (pint)` | `pint --test app routes database` | yo'q |
+| `pos_backend (phpunit)` | sibling'ni klon qilib, testlarni chopadi | **ha** |
+
+Uchinchisi pdaftar.backend'ni o'qiy oladigan PAT'ni `PDAFTAR_BACKEND_TOKEN`
+repo secret'idan oladi. Secret yo'q bo'lsa, ish **qizarmaydi — o'tkazib
+yuboriladi**: fork'dan kelgan PR o'zida bo'lishi mumkin bo'lmagan secret uchun
+qizarmasligi kerak.
+
+Testlar `PosIntegrityService`ning CI javob bera oladigan ikki tekshiruvini
+qat'iy talab qiladi: `shared_domain` va `observers`. Qolgan to'rttasi tirik
+pDaftar bazasi va Redis'ini talab qiladi, shuning uchun to'liq `pos:health`
+alohida, **majburiy bo'lmagan** qadam sifatida chiqadi.
+
+## Claude Code on the web
+
+`.claude/hooks/session-start.sh` veb-sessiya konteynerini tayyorlaydi:
+pdaftar.backend'ni yonma-yon klon qiladi, `composer install` va `npm install`
+qiladi, so'ng `pos:health`ni chop etadi.
+
+Sessiya muhiti manbalariga **`parmonov98/pdaftar.backend` ham qo'shilgan
+bo'lishi kerak** — aks holda klon qadamida ogohlantirish chiqadi va POS backend
+ishga tushmaydi (Kassa ilovasi esa ishlayveradi).
