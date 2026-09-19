@@ -21,15 +21,12 @@ use Throwable;
  * POS's own, so the terminal path does not need the sibling checkout to
  * report a plain permission error.
  */
-class BusinessException extends Exception implements Renderable
-{
-    public function __construct(?string $message = null, int $code = 0, ?Throwable $previous = null)
-    {
+class BusinessException extends Exception implements Renderable {
+    public function __construct(?string $message = null, int $code = 0, ?Throwable $previous = null) {
         parent::__construct($message ?? 'Amalni bajarib bo\'lmadi', $code, $previous);
     }
 
-    public function render(): JsonResponse
-    {
+    public function render(): JsonResponse {
         return response()->json(['message' => $this->getMessage()], Response::HTTP_BAD_REQUEST);
     }
 }

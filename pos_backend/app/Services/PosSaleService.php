@@ -22,8 +22,7 @@ use Pos\Models\SaleItem;
  * customer's bag by the time this code runs. Refusing to record it does not
  * un-sell it; it only loses the record.
  */
-class PosSaleService
-{
+class PosSaleService {
     public function __construct(private readonly PosStockService $stock) {}
 
     /**
@@ -35,8 +34,7 @@ class PosSaleService
      *
      * @throws BusinessException
      */
-    public function create(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): Sale
-    {
+    public function create(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): Sale {
         $lines = $payload['items'] ?? [];
 
         if ($lines === []) {
@@ -134,8 +132,7 @@ class PosSaleService
      *
      * @throws BusinessException
      */
-    public function cancel(PosTerminal $terminal, int $saleId, ?Carbon $occurredAt): Sale
-    {
+    public function cancel(PosTerminal $terminal, int $saleId, ?Carbon $occurredAt): Sale {
         return DB::transaction(function () use ($terminal, $saleId, $occurredAt) {
             $sale = Sale::query()
                 ->where('shop_id', $terminal->shop_id)

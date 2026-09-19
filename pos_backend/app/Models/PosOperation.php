@@ -25,8 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $error
  * @property Carbon|null $occurred_at
  */
-class PosOperation extends Model
-{
+class PosOperation extends Model {
     public const STATUS_APPLIED = 'applied';
 
     /**
@@ -62,13 +61,11 @@ class PosOperation extends Model
         'occurred_at' => 'datetime',
     ];
 
-    public function terminal(): BelongsTo
-    {
+    public function terminal(): BelongsTo {
         return $this->belongsTo(PosTerminal::class, 'pos_terminal_id');
     }
 
-    public function isApplied(): bool
-    {
+    public function isApplied(): bool {
         return $this->status === self::STATUS_APPLIED;
     }
 }

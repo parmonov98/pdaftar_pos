@@ -21,8 +21,7 @@ use Pos\Models\StockMovement;
  * two paths cannot drift into behaving differently — which is the bug this
  * shape exists to prevent, since only one of them is exercised on a good day.
  */
-class PosOperationDispatcher
-{
+class PosOperationDispatcher {
     public function __construct(
         private readonly PosSaleService $sales,
         private readonly PosStockService $stock,
@@ -84,14 +83,12 @@ class PosOperationDispatcher
      * @param  array<string, mixed>|null  $data
      * @return array{entity: Model|null, data: array<string, mixed>}
      */
-    private function wrap(?Model $entity, string $key, ?array $data): array
-    {
+    private function wrap(?Model $entity, string $key, ?array $data): array {
         return ['entity' => $entity, 'data' => $data === null ? [] : [$key => $data]];
     }
 
     /** @throws BusinessException */
-    private function createProduct(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): Product
-    {
+    private function createProduct(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): Product {
         $name = trim((string) ($payload['name'] ?? ''));
 
         if ($name === '') {
@@ -132,8 +129,7 @@ class PosOperationDispatcher
     }
 
     /** @throws BusinessException */
-    private function updateProduct(PosTerminal $terminal, array $payload): Product
-    {
+    private function updateProduct(PosTerminal $terminal, array $payload): Product {
         $product = $this->findProduct($terminal, (int) ($payload['id'] ?? 0));
 
         // array_key_exists, not ??: an explicit null means "clear this", while
@@ -151,8 +147,7 @@ class PosOperationDispatcher
     }
 
     /** @throws BusinessException */
-    private function stockMovement(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): ?array
-    {
+    private function stockMovement(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): ?array {
         $product = $this->findProduct($terminal, (int) ($payload['product_id'] ?? 0));
         $delta = (float) ($payload['quantity'] ?? 0);
 
@@ -169,8 +164,7 @@ class PosOperationDispatcher
     }
 
     /** @throws BusinessException */
-    private function stocktake(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): ?array
-    {
+    private function stocktake(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): ?array {
         $product = $this->findProduct($terminal, (int) ($payload['product_id'] ?? 0));
 
         return $this->stock->recordStocktake(
@@ -183,8 +177,7 @@ class PosOperationDispatcher
     }
 
     /** @throws BusinessException */
-    private function findProduct(PosTerminal $terminal, int $id): Product
-    {
+    private function findProduct(PosTerminal $terminal, int $id): Product {
         $product = Product::query()->where('shop_id', $terminal->shop_id)->find($id);
 
         if ($product === null) {

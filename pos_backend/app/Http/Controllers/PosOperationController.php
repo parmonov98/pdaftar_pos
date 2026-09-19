@@ -23,15 +23,13 @@ use Pos\Services\PosOperationDispatcher;
  * technically do without it. A response that never arrives looks exactly like
  * a request that never landed, and the retry is what rings the sale up twice.
  */
-class PosOperationController extends Controller
-{
+class PosOperationController extends Controller {
     public function __construct(
         private readonly PosIdempotencyService $idempotency,
         private readonly PosOperationDispatcher $dispatcher,
     ) {}
 
-    public function sale(Request $request): JsonResponse
-    {
+    public function sale(Request $request): JsonResponse {
         return $this->run($request, 'sale.create', [
             // `exists`, not just `integer`: a till holding a currency id that
             // was removed since it last synced would otherwise hit a foreign
@@ -49,13 +47,11 @@ class PosOperationController extends Controller
         ]);
     }
 
-    public function cancelSale(Request $request): JsonResponse
-    {
+    public function cancelSale(Request $request): JsonResponse {
         return $this->run($request, 'sale.cancel', ['sale_id' => ['required', 'integer']]);
     }
 
-    public function createProduct(Request $request): JsonResponse
-    {
+    public function createProduct(Request $request): JsonResponse {
         return $this->run($request, 'product.create', [
             'name' => ['required', 'string', 'max:191'],
             'code' => ['nullable', 'string', 'max:64'],
@@ -69,8 +65,7 @@ class PosOperationController extends Controller
         ]);
     }
 
-    public function updateProduct(Request $request): JsonResponse
-    {
+    public function updateProduct(Request $request): JsonResponse {
         return $this->run($request, 'product.update', [
             'id' => ['required', 'integer'],
             'name' => ['sometimes', 'string', 'max:191'],
@@ -84,8 +79,7 @@ class PosOperationController extends Controller
         ]);
     }
 
-    public function stockMovement(Request $request): JsonResponse
-    {
+    public function stockMovement(Request $request): JsonResponse {
         return $this->run($request, 'stock.movement', [
             'product_id' => ['required', 'integer'],
             'quantity' => ['required', 'numeric'],
@@ -94,8 +88,7 @@ class PosOperationController extends Controller
         ]);
     }
 
-    public function stocktake(Request $request): JsonResponse
-    {
+    public function stocktake(Request $request): JsonResponse {
         return $this->run($request, 'stock.stocktake', [
             'product_id' => ['required', 'integer'],
             'counted_quantity' => ['required', 'numeric', 'min:0'],
@@ -106,8 +99,7 @@ class PosOperationController extends Controller
     /**
      * @param  array<string, mixed>  $rules
      */
-    private function run(Request $request, string $type, array $rules): JsonResponse
-    {
+    private function run(Request $request, string $type, array $rules): JsonResponse {
         $terminal = $request->attributes->get('pos_terminal');
 
         $validated = $request->validate(array_merge($rules, [

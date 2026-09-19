@@ -15,10 +15,8 @@ use Illuminate\Support\Facades\Schema;
  * for "how much of this did we sell?", the snapshot answers "what did this
  * customer buy?".
  */
-return new class extends Migration
-{
-    public function up(): void
-    {
+return new class extends Migration {
+    public function up(): void {
         Schema::create('sale_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('sale_id')->constrained('sales')->cascadeOnDelete();
@@ -41,8 +39,7 @@ return new class extends Migration
         });
     }
 
-    public function down(): void
-    {
+    public function down(): void {
         Schema::dropIfExists('sale_items');
     }
 };

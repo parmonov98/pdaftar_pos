@@ -16,10 +16,8 @@ use Illuminate\Support\Facades\Schema;
  * `pdaftar_shop_id` mirrors the user table's link column. A linked shop keeps
  * pDaftar's id beside its own; an unlinked one simply has none.
  */
-return new class extends Migration
-{
-    public function up(): void
-    {
+return new class extends Migration {
+    public function up(): void {
         Schema::create('shops', function (Blueprint $table) {
             $table->id();
 
@@ -45,8 +43,7 @@ return new class extends Migration
         });
     }
 
-    public function down(): void
-    {
+    public function down(): void {
         Schema::dropIfExists('shops');
     }
 };

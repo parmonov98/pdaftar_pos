@@ -15,10 +15,8 @@ use Illuminate\Support\Facades\Schema;
  * tills that were offline all day safe to sync in either order: deltas
  * commute, so -3 then -2 lands on the same balance as -2 then -3.
  */
-return new class extends Migration
-{
-    public function up(): void
-    {
+return new class extends Migration {
+    public function up(): void {
         Schema::create('stock_movements', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
@@ -60,8 +58,7 @@ return new class extends Migration
         });
     }
 
-    public function down(): void
-    {
+    public function down(): void {
         Schema::dropIfExists('stock_movements');
     }
 };

@@ -17,8 +17,7 @@ use Tests\TestCase;
  * that passes only because a sibling checkout happens to be present would be
  * the exact regression this work removed.
  */
-class AuthTest extends TestCase
-{
+class AuthTest extends TestCase {
     use RefreshDatabase;
 
     private const VALID = [
@@ -28,8 +27,7 @@ class AuthTest extends TestCase
         'shop_name' => 'Anvar Market',
     ];
 
-    public function test_registration_creates_user_shop_and_membership_together(): void
-    {
+    public function test_registration_creates_user_shop_and_membership_together(): void {
         $response = $this->postJson('/api/pos/v1/auth/register', self::VALID);
 
         $response->assertCreated();
@@ -48,15 +46,13 @@ class AuthTest extends TestCase
      * terminal_limit comes from a database default the freshly created model
      * has never read. Reporting null told the till the shop may open no tills.
      */
-    public function test_registration_reports_the_terminal_limit(): void
-    {
+    public function test_registration_reports_the_terminal_limit(): void {
         $response = $this->postJson('/api/pos/v1/auth/register', self::VALID);
 
         $this->assertNotNull($response->json('data.shops.0.terminal_limit'));
     }
 
-    public function test_the_password_is_never_stored_in_the_clear(): void
-    {
+    public function test_the_password_is_never_stored_in_the_clear(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
 
         $this->assertNotSame('kassa12345', User::first()->password);
@@ -66,8 +62,7 @@ class AuthTest extends TestCase
      * "+998 90 123 45 67" and "998901234567" are one person. Two accounts for
      * one cashier splits their sales across two names.
      */
-    public function test_phone_numbers_are_normalised_on_both_sides(): void
-    {
+    public function test_phone_numbers_are_normalised_on_both_sides(): void {
         $this->postJson('/api/pos/v1/auth/register', [
             ...self::VALID,
             'phone_number' => '+998 90 123 45 67',
@@ -81,8 +76,7 @@ class AuthTest extends TestCase
         ])->assertOk();
     }
 
-    public function test_a_second_registration_on_the_same_number_is_refused(): void
-    {
+    public function test_a_second_registration_on_the_same_number_is_refused(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
 
         $this->postJson('/api/pos/v1/auth/register', self::VALID)
@@ -92,15 +86,13 @@ class AuthTest extends TestCase
         $this->assertDatabaseCount('users', 1);
     }
 
-    public function test_a_malformed_phone_number_is_refused(): void
-    {
+    public function test_a_malformed_phone_number_is_refused(): void {
         $this->postJson('/api/pos/v1/auth/register', [...self::VALID, 'phone_number' => '12345'])
             ->assertStatus(422)
             ->assertJsonValidationErrors('phone_number');
     }
 
-    public function test_login_returns_a_token_and_the_shops(): void
-    {
+    public function test_login_returns_a_token_and_the_shops(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
 
         $response = $this->postJson('/api/pos/v1/auth/login', [
@@ -117,8 +109,7 @@ class AuthTest extends TestCase
      * A wrong password and an unknown number must be indistinguishable —
      * otherwise the difference enumerates which numbers are registered.
      */
-    public function test_wrong_password_and_unknown_number_are_indistinguishable(): void
-    {
+    public function test_wrong_password_and_unknown_number_are_indistinguishable(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
 
         $wrongPassword = $this->postJson('/api/pos/v1/auth/login', [
@@ -136,8 +127,7 @@ class AuthTest extends TestCase
         $this->assertSame($wrongPassword->json('message'), $unknownNumber->json('message'));
     }
 
-    public function test_a_deactivated_account_cannot_sign_in(): void
-    {
+    public function test_a_deactivated_account_cannot_sign_in(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
         User::first()->forceFill(['is_active' => false])->save();
 
@@ -147,13 +137,11 @@ class AuthTest extends TestCase
         ])->assertStatus(403);
     }
 
-    public function test_me_requires_a_token(): void
-    {
+    public function test_me_requires_a_token(): void {
         $this->getJson('/api/pos/v1/auth/me')->assertStatus(401);
     }
 
-    public function test_me_answers_for_the_token_holder(): void
-    {
+    public function test_me_answers_for_the_token_holder(): void {
         $token = $this->postJson('/api/pos/v1/auth/register', self::VALID)->json('data.token');
 
         $this->withToken($token)
@@ -167,8 +155,7 @@ class AuthTest extends TestCase
      * Signing out of one till must not sign the owner's phone out of another,
      * so only the token that made the request is dropped.
      */
-    public function test_logout_revokes_only_the_calling_token(): void
-    {
+    public function test_logout_revokes_only_the_calling_token(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
         $user = User::first();
 
@@ -189,8 +176,7 @@ class AuthTest extends TestCase
     }
 
     /** A seller belongs to a shop they did not create, and sees only that one. */
-    public function test_a_seller_sees_only_the_shops_they_belong_to(): void
-    {
+    public function test_a_seller_sees_only_the_shops_they_belong_to(): void {
         $this->postJson('/api/pos/v1/auth/register', self::VALID)->assertCreated();
         $ownersShop = Shop::first();
 

@@ -20,8 +20,7 @@ use Laravel\Sanctum\HasApiTokens;
  * worth of state that a standalone POS has no table for and no use for. The
  * link between the two, when it exists, is one nullable id.
  */
-class User extends Authenticatable
-{
+class User extends Authenticatable {
     use HasApiTokens, HasFactory, SoftDeletes;
 
     protected $fillable = [
@@ -36,8 +35,7 @@ class User extends Authenticatable
 
     protected $hidden = ['password', 'remember_token'];
 
-    protected function casts(): array
-    {
+    protected function casts(): array {
         return [
             'password' => 'hashed',
             'pdaftar_linked_at' => 'datetime',
@@ -54,35 +52,30 @@ class User extends Authenticatable
      * cashier's sales across three names. Every read and write of this column
      * goes through here.
      */
-    public static function normalisePhone(string $raw): string
-    {
+    public static function normalisePhone(string $raw): string {
         $digits = preg_replace('/\D+/', '', $raw) ?? '';
 
         return $digits === '' ? '' : '+'.$digits;
     }
 
-    public static function findByPhone(string $raw): ?self
-    {
+    public static function findByPhone(string $raw): ?self {
         return static::query()
             ->where('phone_number', static::normalisePhone($raw))
             ->first();
     }
 
-    public function checkPassword(string $plain): bool
-    {
+    public function checkPassword(string $plain): bool {
         return Hash::check($plain, $this->password);
     }
 
     /** Shops this user may open a till in — owner and seller alike. */
-    public function shops(): BelongsToMany
-    {
+    public function shops(): BelongsToMany {
         return $this->belongsToMany(Shop::class, 'user_shop')
             ->withPivot('role')
             ->withTimestamps();
     }
 
-    public function terminals(): HasMany
-    {
+    public function terminals(): HasMany {
         return $this->hasMany(PosTerminal::class);
     }
 
@@ -93,14 +86,12 @@ class User extends Authenticatable
      * open a till in a given shop, so it is a HasMany over the pivot and not
      * the BelongsToMany above.
      */
-    public function userShops(): HasMany
-    {
+    public function userShops(): HasMany {
         return $this->hasMany(UserShop::class);
     }
 
     /** True once this account has been tied to a pDaftar account. */
-    public function isLinkedToPdaftar(): bool
-    {
+    public function isLinkedToPdaftar(): bool {
         return $this->pdaftar_user_id !== null;
     }
 }

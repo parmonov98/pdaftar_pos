@@ -19,8 +19,7 @@ use Throwable;
  * relies on that relationship — it treats the parent as "safe to replay under
  * the same operation id" and answers this one with 409 specifically.
  */
-class InsufficientStockException extends BusinessException
-{
+class InsufficientStockException extends BusinessException {
     public function __construct(
         string $message,
         public readonly string $productName,

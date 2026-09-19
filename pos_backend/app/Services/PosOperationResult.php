@@ -8,8 +8,7 @@ namespace Pos\Services;
  * The outcome of one POS write, in the shape both entry points return:
  * a single REST call and one element of a /sync/push batch.
  */
-final class PosOperationResult
-{
+final class PosOperationResult {
     private function __construct(
         public readonly string $clientOperationId,
         public readonly string $type,
@@ -46,8 +45,7 @@ final class PosOperationResult
         return new self($clientOperationId, $type, 'failed', $data, false, $error, $httpStatus);
     }
 
-    public function toArray(): array
-    {
+    public function toArray(): array {
         return [
             'client_operation_id' => $this->clientOperationId,
             'type' => $this->type,

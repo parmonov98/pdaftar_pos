@@ -31,8 +31,7 @@ use Pos\Services\PosTerminalService;
  * password. `register` is a silent device handshake the client makes right
  * after login; the seller never sees it and can never be refused by it.
  */
-class PosTerminalController extends Controller
-{
+class PosTerminalController extends Controller {
     public function __construct(private readonly PosTerminalService $terminals) {}
 
     /**
@@ -67,8 +66,7 @@ class PosTerminalController extends Controller
      *     @OA\Response(response=422, description="Validatsiya xatosi")
      * )
      */
-    public function register(Request $request): JsonResponse
-    {
+    public function register(Request $request): JsonResponse {
         $data = $request->validate([
             'shop_id' => 'required|integer|exists:shops,id',
             'device_id' => 'required|string|max:128',
@@ -126,8 +124,7 @@ class PosTerminalController extends Controller
      * "create a kassa" step this design exists to remove, and the two facts
      * worth recording — who signed in and on what — are both already known.
      */
-    private function deviceName(Request $request, User $user, ?string $provided): string
-    {
+    private function deviceName(Request $request, User $user, ?string $provided): string {
         $provided = trim((string) $provided);
 
         if ($provided !== '') {
@@ -169,8 +166,7 @@ class PosTerminalController extends Controller
      * is asking as themselves, from their phone or from a device that may not be
      * signed in to the POS at all.
      */
-    public function manageIndex(Request $request): JsonResponse
-    {
+    public function manageIndex(Request $request): JsonResponse {
         /** @var User $user */
         $user = $request->user();
 
@@ -216,8 +212,7 @@ class PosTerminalController extends Controller
      *     @OA\Response(response=404, description="Topilmadi")
      * )
      */
-    public function manageDestroy(Request $request, int $terminalId): JsonResponse
-    {
+    public function manageDestroy(Request $request, int $terminalId): JsonResponse {
         /** @var User $user */
         $user = $request->user();
 
@@ -249,8 +244,7 @@ class PosTerminalController extends Controller
         ]);
     }
 
-    private function userBelongsToShop(User $user, int $shopId): bool
-    {
+    private function userBelongsToShop(User $user, int $shopId): bool {
         if ($shopId <= 0) {
             return false;
         }
@@ -272,8 +266,7 @@ class PosTerminalController extends Controller
      *     @OA\Response(response=200, description="OK")
      * )
      */
-    public function me(Request $request): JsonResponse
-    {
+    public function me(Request $request): JsonResponse {
         /** @var PosTerminal $terminal */
         $terminal = $request->attributes->get('pos_terminal');
         /** @var User $user */
@@ -316,8 +309,7 @@ class PosTerminalController extends Controller
      *     @OA\Response(response=200, description="OK")
      * )
      */
-    public function index(Request $request): JsonResponse
-    {
+    public function index(Request $request): JsonResponse {
         /** @var PosTerminal $terminal */
         $terminal = $request->attributes->get('pos_terminal');
 
@@ -350,8 +342,7 @@ class PosTerminalController extends Controller
      *     @OA\Response(response=404, description="Topilmadi")
      * )
      */
-    public function destroy(Request $request, int $terminalId): JsonResponse
-    {
+    public function destroy(Request $request, int $terminalId): JsonResponse {
         /** @var PosTerminal $current */
         $current = $request->attributes->get('pos_terminal');
 
@@ -381,8 +372,7 @@ class PosTerminalController extends Controller
      *
      * @return string[]
      */
-    private function scopesOf(User $user): array
-    {
+    private function scopesOf(User $user): array {
         $token = $user->currentAccessToken();
 
         if (! $token instanceof PersonalAccessToken) {
@@ -392,8 +382,7 @@ class PosTerminalController extends Controller
         return is_array($token->abilities) ? $token->abilities : [];
     }
 
-    private function terminalArray(PosTerminal $terminal): array
-    {
+    private function terminalArray(PosTerminal $terminal): array {
         return [
             'id' => $terminal->id,
             'name' => $terminal->name,

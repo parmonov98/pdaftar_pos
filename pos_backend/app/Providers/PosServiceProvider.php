@@ -22,15 +22,12 @@ use Pos\Models\PersonalAccessToken;
  * code, so the observers it needs are the ones it defines itself, and the
  * consequences of forgetting one are its own to own.
  */
-class PosServiceProvider extends ServiceProvider
-{
-    public function register(): void
-    {
+class PosServiceProvider extends ServiceProvider {
+    public function register(): void {
         //
     }
 
-    public function boot(): void
-    {
+    public function boot(): void {
         // Sanctum resolves EVERY authenticated request through this model, so
         // it must be the POS's own — pointing it at pDaftar's would make
         // authentication impossible without a checkout of pDaftar present.

@@ -12,10 +12,8 @@ use Pos\Models\Sale;
 /**
  * Recent sales, for the Tarix screen and for reprinting a receipt.
  */
-class PosSaleHistoryController extends Controller
-{
-    public function recent(Request $request): JsonResponse
-    {
+class PosSaleHistoryController extends Controller {
+    public function recent(Request $request): JsonResponse {
         $terminal = $request->attributes->get('pos_terminal');
 
         $data = $request->validate([

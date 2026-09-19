@@ -18,10 +18,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Narrowing, never widening: the user's own shop permissions are still checked
  * downstream.
  */
-class PosScopeMiddleware
-{
-    public function handle(Request $request, Closure $next, string ...$scopes): Response
-    {
+class PosScopeMiddleware {
+    public function handle(Request $request, Closure $next, string ...$scopes): Response {
         $token = $request->user()?->currentAccessToken();
 
         if ($token === null) {

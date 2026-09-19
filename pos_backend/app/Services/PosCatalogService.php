@@ -22,8 +22,7 @@ use Pos\Models\Unit;
  * Deleted rows are sent, marked `deleted: true`. A till that is never told a
  * product disappeared keeps it scannable for as long as that device lives.
  */
-class PosCatalogService
-{
+class PosCatalogService {
     public const ENTITIES = ['products', 'units', 'currencies'];
 
     private const MAX_LIMIT = 1000;
@@ -32,8 +31,7 @@ class PosCatalogService
      * @param  array<int, string>  $entities
      * @return array<string, mixed>
      */
-    public function pull(Shop $shop, array $entities, ?Carbon $since, ?int $sinceId, int $limit): array
-    {
+    public function pull(Shop $shop, array $entities, ?Carbon $since, ?int $sinceId, int $limit): array {
         $limit = max(1, min($limit, self::MAX_LIMIT));
 
         $requested = array_values(array_intersect($entities, self::ENTITIES));
@@ -101,8 +99,7 @@ class PosCatalogService
     }
 
     /** One product, resolved from whatever the scanner or the cashier typed. */
-    public function lookup(Shop $shop, string $code): ?array
-    {
+    public function lookup(Shop $shop, string $code): ?array {
         $product = Product::query()->where('shop_id', $shop->id)->where('barcode', $code)->first()
             ?? Product::query()->where('shop_id', $shop->id)->where('code', $code)->first();
 
@@ -110,8 +107,7 @@ class PosCatalogService
     }
 
     /** @return array{0: list<array>, 1: bool, 2: ?array{updated_at: ?string, id: ?int}} */
-    private function page(Builder $query, ?Carbon $since, ?int $sinceId, int $limit, callable $map): array
-    {
+    private function page(Builder $query, ?Carbon $since, ?int $sinceId, int $limit, callable $map): array {
         if ($since !== null) {
             $query->where(function (Builder $q) use ($since, $sinceId) {
                 $q->where('updated_at', '>', $since);
@@ -140,8 +136,7 @@ class PosCatalogService
     }
 
     /** @return array<string, mixed> */
-    private function productArray(Product $product): array
-    {
+    private function productArray(Product $product): array {
         return [
             'id' => $product->id,
             'name' => $product->name,

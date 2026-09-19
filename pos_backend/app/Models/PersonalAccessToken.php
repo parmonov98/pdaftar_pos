@@ -18,8 +18,7 @@ use Laravel\Sanctum\PersonalAccessToken as SanctumPersonalAccessToken;
  * through it, so pointing at pDaftar's version would make the POS unable to
  * authenticate anyone the moment ../../backend is absent.
  */
-class PersonalAccessToken extends SanctumPersonalAccessToken
-{
+class PersonalAccessToken extends SanctumPersonalAccessToken {
     /** @var array<int, string> */
     protected $fillable = [
         'name',
