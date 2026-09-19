@@ -6,6 +6,7 @@ namespace Pos\Services;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Pos\Models\Client;
 use Pos\Models\Currency;
 use Pos\Models\Product;
 use Pos\Models\Shop;
@@ -23,7 +24,7 @@ use Pos\Models\Unit;
  * product disappeared keeps it scannable for as long as that device lives.
  */
 class PosCatalogService {
-    public const ENTITIES = ['products', 'units', 'currencies'];
+    public const ENTITIES = ['products', 'units', 'currencies', 'clients'];
 
     private const MAX_LIMIT = 1000;
 
@@ -60,6 +61,19 @@ class PosCatalogService {
                         'is_default' => (bool) $u->is_default,
                         'deleted' => $u->deleted_at !== null,
                         'updated_at' => $u->updated_at?->toIso8601String(),
+                    ],
+                ),
+                'clients' => $this->page(
+                    Client::query()->where('shop_id', $shop->id)->withTrashed(),
+                    $since, $sinceId, $limit,
+                    fn (Client $c) => [
+                        'id' => $c->id,
+                        'name' => $c->name,
+                        'phone_number' => $c->phone_number,
+                        // Computed, not stored — see Client::balance().
+                        'balance' => $c->balance(),
+                        'deleted' => $c->deleted_at !== null,
+                        'updated_at' => $c->updated_at?->toIso8601String(),
                     ],
                 ),
                 'currencies' => $this->page(

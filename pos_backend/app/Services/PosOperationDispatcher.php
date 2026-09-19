@@ -9,6 +9,8 @@ use Illuminate\Support\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 use Pos\Constants\PosScope;
 use Pos\Exceptions\BusinessException;
+use Pos\Models\Client;
+use Pos\Models\ClientPayment;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
 use Pos\Models\StockMovement;
@@ -33,6 +35,8 @@ class PosOperationDispatcher {
         'sale.cancel' => PosScope::SALES_WRITE,
         'product.create' => PosScope::PRODUCTS_WRITE,
         'product.update' => PosScope::PRODUCTS_WRITE,
+        'client.create' => PosScope::CLIENTS_WRITE,
+        'client.payment' => PosScope::CLIENTS_WRITE,
         'stock.movement' => PosScope::STOCK_WRITE,
         'stock.stocktake' => PosScope::STOCK_WRITE,
     ];
@@ -74,6 +78,8 @@ class PosOperationDispatcher {
             'sale.cancel' => $this->wrap($cancelled = $this->sales->cancel($terminal, (int) ($payload['sale_id'] ?? 0), $occurredAt), 'sale', $cancelled->toArray()),
             'product.create' => $this->wrap($created = $this->createProduct($terminal, $payload, $occurredAt, $userId), 'product', $created->toArray()),
             'product.update' => $this->wrap($updated = $this->updateProduct($terminal, $payload), 'product', $updated->toArray()),
+            'client.create' => $this->wrap($client = $this->createClient($terminal, $payload), 'client', $client->toArray()),
+            'client.payment' => $this->wrap($payment = $this->clientPayment($terminal, $payload, $occurredAt, $userId), 'payment', $payment->toArray()),
             'stock.movement' => $this->wrap(null, 'movement', $this->stockMovement($terminal, $payload, $occurredAt, $userId)),
             'stock.stocktake' => $this->wrap(null, 'movement', $this->stocktake($terminal, $payload, $occurredAt, $userId)),
         };
@@ -144,6 +150,59 @@ class PosOperationDispatcher {
         $product->save();
 
         return $product;
+    }
+
+    /** @throws BusinessException */
+    private function createClient(PosTerminal $terminal, array $payload): Client {
+        $name = trim((string) ($payload['name'] ?? ''));
+
+        if ($name === '') {
+            throw new BusinessException('Mijoz ismi kerak');
+        }
+
+        return Client::create([
+            'shop_id' => $terminal->shop_id,
+            'name' => $name,
+            'phone_number' => $payload['phone_number'] ?? null,
+            'note' => $payload['note'] ?? null,
+        ]);
+    }
+
+    /**
+     * Money coming back against a debt.
+     *
+     * Overpaying is allowed: a client settling 50,000 against a 30,000 debt
+     * leaves 20,000 of credit, and refusing the note they are holding out
+     * helps nobody. It shows as a negative balance, which is visible.
+     *
+     * @throws BusinessException
+     */
+    private function clientPayment(PosTerminal $terminal, array $payload, ?Carbon $occurredAt, int $userId): ClientPayment {
+        $client = Client::query()
+            ->where('shop_id', $terminal->shop_id)
+            ->find((int) ($payload['client_id'] ?? 0));
+
+        if ($client === null) {
+            throw new BusinessException('Mijoz topilmadi');
+        }
+
+        $amount = round((float) ($payload['amount'] ?? 0), 6);
+
+        if ($amount <= 0) {
+            throw new BusinessException('Summa noldan katta bo\'lishi kerak');
+        }
+
+        return ClientPayment::create([
+            'shop_id' => $terminal->shop_id,
+            'client_id' => $client->id,
+            'sale_id' => $payload['sale_id'] ?? null,
+            'amount' => $amount,
+            'payment_type' => $payload['payment_type'] ?? null,
+            'note' => $payload['note'] ?? null,
+            'user_id' => $userId,
+            'pos_terminal_id' => $terminal->id,
+            'occurred_at' => $occurredAt ?? now(),
+        ]);
     }
 
     /** @throws BusinessException */

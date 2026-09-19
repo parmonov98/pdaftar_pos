@@ -7,6 +7,7 @@ namespace Pos\Services;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Pos\Exceptions\BusinessException;
+use Pos\Models\Client;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
 use Pos\Models\Sale;
@@ -80,9 +81,29 @@ class PosSaleService {
             $discount = max(0.0, min($discount, $subtotal));
             $total = round($subtotal - $discount, 6);
 
+            // A sale that is not paid in full is a debt, and a debt with
+            // nobody attached to it is money the shop cannot chase. Refused
+            // here rather than written and discovered at the end of the month.
+            $paid = round((float) ($payload['paid_amount'] ?? 0), 6);
+            $clientId = $payload['client_id'] ?? null;
+
+            if ($paid + 0.000001 < $total && $clientId === null) {
+                throw new BusinessException(
+                    'To\'liq to\'lanmagan sotuv nasiya hisoblanadi — mijoz tanlang',
+                );
+            }
+
+            if ($clientId !== null && ! Client::query()
+                ->where('shop_id', $terminal->shop_id)
+                ->whereKey($clientId)
+                ->exists()) {
+                throw new BusinessException('Mijoz topilmadi: #'.$clientId);
+            }
+
             $sale = Sale::create([
                 'shop_id' => $terminal->shop_id,
                 'pos_terminal_id' => $terminal->id,
+                'client_id' => $clientId,
                 // The cashier, captured now. Deriving it later from the
                 // terminal would name whoever signed in most recently.
                 'user_id' => $userId,
@@ -90,7 +111,7 @@ class PosSaleService {
                 'subtotal' => $subtotal,
                 'discount_amount' => $discount,
                 'total' => $total,
-                'paid_amount' => round((float) ($payload['paid_amount'] ?? 0), 6),
+                'paid_amount' => $paid,
                 'payment_type' => $payload['payment_type'] ?? null,
                 'note' => $payload['note'] ?? null,
                 'status' => Sale::STATUS_COMPLETED,

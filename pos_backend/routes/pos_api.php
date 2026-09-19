@@ -109,6 +109,12 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::patch('/products', [PosOperationController::class, 'updateProduct'])->name('pos.products.update');
         });
 
+        Route::middleware('pos.scope:'.PosScope::CLIENTS_WRITE->value)->group(function () {
+            Route::post('/clients', [PosOperationController::class, 'createClient'])->name('pos.clients.store');
+            Route::post('/clients/payments', [PosOperationController::class, 'clientPayment'])
+                ->name('pos.clients.payments.store');
+        });
+
         Route::middleware('pos.scope:'.PosScope::STOCK_WRITE->value)->group(function () {
             Route::post('/stock/movements', [PosOperationController::class, 'stockMovement'])->name('pos.stock.movements.store');
             Route::post('/stock/stocktake', [PosOperationController::class, 'stocktake'])->name('pos.stock.stocktake');

@@ -72,12 +72,23 @@ class SaleTest extends TestCase {
         $this->cola->refresh();
     }
 
+    /**
+     * A cash sale, paid in full.
+     *
+     * paid_amount is computed rather than left out: a sale that is not fully
+     * paid is a debt, and the service refuses one with nobody attached to it.
+     * That is the behaviour under test elsewhere, not an inconvenience to
+     * route around here.
+     */
     private function sell(array $items, array $extra = [], ?Carbon $at = null): Sale {
         $terminal = $this->terminal();
 
+        $subtotal = array_sum(array_map(fn ($i) => $i['quantity'] * $i['price'], $items));
+        $due = max(0.0, $subtotal - (float) ($extra['discount_amount'] ?? 0));
+
         return app(PosSaleService::class)->create(
             $terminal,
-            array_merge(['items' => $items], $extra),
+            array_merge(['items' => $items, 'paid_amount' => $due, 'payment_type' => 'cash'], $extra),
             $at,
             $this->user->id,
         );
@@ -242,7 +253,10 @@ class SaleTest extends TestCase {
         $terminal = $this->terminal();
         $sobirsSale = app(PosSaleService::class)->create(
             $terminal,
-            ['items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]],
+            [
+                'items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]],
+                'paid_amount' => 12000,
+            ],
             null,
             $sobir->id,
         );
@@ -268,6 +282,7 @@ class SaleTest extends TestCase {
             ->postJson('/api/pos/v1/sales', [
                 'client_operation_id' => (string) Str::uuid(),
                 'currency_id' => 9999,
+                'paid_amount' => 12000,
                 'items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]],
             ])
             ->assertStatus(422)
@@ -290,6 +305,7 @@ class SaleTest extends TestCase {
         $opId = (string) Str::uuid();
         $body = [
             'client_operation_id' => $opId,
+            'paid_amount' => 24000,
             'items' => [['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]],
         ];
 

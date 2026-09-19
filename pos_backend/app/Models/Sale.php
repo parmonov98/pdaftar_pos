@@ -14,7 +14,7 @@ class Sale extends Model {
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'shop_id', 'pos_terminal_id', 'user_id', 'currency_id',
+        'shop_id', 'pos_terminal_id', 'user_id', 'client_id', 'currency_id',
         'subtotal', 'discount_amount', 'total', 'paid_amount',
         'payment_type', 'note', 'status', 'cancelled_at', 'occurred_at',
     ];
@@ -49,6 +49,20 @@ class Sale extends Model {
 
     public function currency(): BelongsTo {
         return $this->belongsTo(Currency::class);
+    }
+
+    /** Set only when the shop has to remember who — in practice, a credit sale. */
+    public function client(): BelongsTo {
+        return $this->belongsTo(Client::class);
+    }
+
+    public function payments(): HasMany {
+        return $this->hasMany(ClientPayment::class);
+    }
+
+    /** Nothing was handed over, or not all of it. */
+    public function isCredit(): bool {
+        return $this->outstanding() > 0;
     }
 
     public function isCancelled(): bool {

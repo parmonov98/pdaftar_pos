@@ -36,6 +36,7 @@ class PosOperationController extends Controller {
             // key and get "Server Error" — which tells it nothing and looks
             // like the POS is broken rather than its cached list being stale.
             'currency_id' => ['nullable', 'integer', 'exists:currencies,id'],
+            'client_id' => ['nullable', 'integer', 'exists:clients,id'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'max:24'],
             'paid_amount' => ['nullable', 'numeric', 'min:0'],
@@ -76,6 +77,24 @@ class PosOperationController extends Controller {
             'currency_id' => ['sometimes', 'nullable', 'integer', 'exists:currencies,id'],
             'low_stock_threshold' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'image_url' => ['sometimes', 'nullable', 'string', 'max:512'],
+        ]);
+    }
+
+    public function createClient(Request $request): JsonResponse {
+        return $this->run($request, 'client.create', [
+            'name' => ['required', 'string', 'max:191'],
+            'phone_number' => ['nullable', 'string', 'max:20'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+    }
+
+    public function clientPayment(Request $request): JsonResponse {
+        return $this->run($request, 'client.payment', [
+            'client_id' => ['required', 'integer', 'exists:clients,id'],
+            'sale_id' => ['nullable', 'integer', 'exists:sales,id'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'payment_type' => ['nullable', 'string', 'max:24'],
+            'note' => ['nullable', 'string', 'max:255'],
         ]);
     }
 
