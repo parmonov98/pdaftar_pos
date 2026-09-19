@@ -605,25 +605,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
      nothing, so they would be four labels pointing at the wrong values. */
   .cart-head-row { display: none; }
 
-  .cart-row {
-    grid-template-columns: 1fr 1fr auto;
-    grid-template-areas:
-      "name  name  del"
-      "qty   qty   qty"
-      "price price sum";
-    row-gap: 10px;
-    align-items: center;
-  }
-
-  /* Quantity gets the whole width. It holds four controls — minus, the
-     number, plus and the unit — and sharing a line with the price left the
-     number 28px wide and the unit picker a bare chevron with its label
-     clipped off. On a multi-unit product that chevron is the difference
-     between selling a bottle and selling a box. */
-  .cart-row .cell.c:first-of-type { justify-content: stretch; }
-  .cart-row .cell.c:first-of-type .stepper { width: 100%; }
-  .cart-row .cell.c:first-of-type .stepper input { flex: 1 1 auto; }
-  .cart-row .cell.c:first-of-type .unit-select { flex: 0 0 auto; width: auto; }
+  /* The row layout itself lives in the @container block near the bottom of
+     this file, which is narrower than this rule and therefore wins. Do not
+     add a second copy here — that is exactly how a fix to the quantity cell
+     landed on a rule nothing was reading. */
 
   /* Positional rather than semantic because both steppers carry the same
      class: 2 is quantity, 3 is price, 4 the line total, 5 the remove button.
@@ -815,9 +800,15 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 
   .cart-row {
     grid-template-columns: 1fr 1fr auto;
+    /* Quantity gets a line of its own. It carries four controls — minus,
+       the number, plus and the unit — and sharing one with the price left
+       the number 28px wide and the unit picker a bare chevron with "dona"
+       clipped off. On a product sold by the bottle and by the box, that
+       chevron is the difference between the two. */
     grid-template-areas:
       "name  name  del"
-      "qty   price sum";
+      "qty   qty   qty"
+      "price price sum";
     row-gap: 10px;
     align-items: center;
   }
@@ -828,6 +819,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .cart-row .cell:nth-child(5) { grid-area: del; }
   .cart-row .cell.c { justify-content: stretch; }
   .cart-row .stepper { width: 100%; }
+
+  /* The number takes the slack; the steppers and the unit keep their size. */
+  .cart-row .cell:nth-child(2) .stepper input { flex: 1 1 auto; min-width: 0; }
+  .cart-row .cell:nth-child(2) .unit-select { flex: 0 0 auto; max-width: none; }
 }
 
 /* The unit a line is sold in. Sits inside the stepper where the plain unit
