@@ -758,7 +758,18 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
    this: the window is wide, the pane is not. */
 .cart-pane { container-type: inline-size; }
 
-@container (max-width: 620px) {
+/* The column widths belong to the pane too, not the window. At 673px — a
+   perfectly ordinary half of a 1512 screen — the viewport rule was still
+   handing out 190+210+150+48 of fixed columns and leaving the product name
+   50px. The cashier reads the name to check they scanned the right thing;
+   it is the last column that should give way, not the first. */
+@container (max-width: 900px) {
+  .cart-head-row, .cart-row {
+    grid-template-columns: minmax(120px, 1fr) 118px 128px 96px 40px;
+  }
+}
+
+@container (max-width: 520px) {
   .cart-head-row { display: none; }
 
   .cart-row {
