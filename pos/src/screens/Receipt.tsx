@@ -94,7 +94,8 @@ export function ReceiptView({
               <div className="r-name">{line.name}</div>
               <div className="r-calc">
                 <span>
-                  {formatMoney(line.quantity)} × {formatMoney(line.price)}
+                  {formatMoney(line.quantity)}
+                  {line.unit ? ` ${line.unit}` : ''} × {formatMoney(line.price)}
                 </span>
                 <span>{formatMoney(line.total)}</span>
               </div>

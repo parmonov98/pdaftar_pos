@@ -375,7 +375,15 @@ export type RecentSale = {
   /** Kassa's free-text line: products, quantities, discount. */
   description: string | null
   created_at: string | null
-  items: Array<{ product_id: number; name: string | null; quantity: number | null; total: number }>
+  items: Array<{
+    product_id: number
+    name: string | null
+    /** Snapshotted on the sale line, so a reprint says dona or karobka even
+        if the product's units were changed afterwards. */
+    unit_name?: string | null
+    quantity: number | null
+    total: number
+  }>
 }
 
 export function fetchRecentSales(params: { limit?: number; mine?: boolean } = {}): Promise<RecentSale[]> {

@@ -24,6 +24,12 @@ export type ReceiptLine = {
   quantity: number
   price: number
   total: number
+  /**
+   * What the quantity is counted in. Optional because sales printed before
+   * multi-unit existed have none stored, and a reprint of one of those must
+   * still work.
+   */
+  unit?: string | null
 }
 
 export type Receipt = {
@@ -74,6 +80,13 @@ export function receiptFromSale(
     discount: number
     /** Passed in rather than inferred — the caller is the only place that knows. */
     isCredit: boolean
+    /**
+     * Unit label per product unit id. Only the screen knows these — the units
+     * table is not reachable from here — and without them a box and a bottle
+     * print identically as "1 ×", which is the one thing a customer holding
+     * the paper needs to be able to tell apart.
+     */
+    unitNames?: Record<number, string>
   },
 ): Receipt {
   const subtotal = round2(lines.reduce((sum, l) => sum + l.quantity * l.price, 0))
@@ -98,6 +111,7 @@ export function receiptFromSale(
       quantity: l.quantity,
       price: l.price,
       total: round2(l.quantity * l.price),
+      unit: l.productUnitId == null ? null : (context.unitNames?.[l.productUnitId] ?? null),
     })),
     subtotal,
     discount: context.discount,
@@ -140,6 +154,9 @@ export function receiptFromHistory(
       quantity,
       price: quantity > 0 ? round2(item.total / quantity) : item.total,
       total: item.total,
+      // Already snapshotted on the sale line server-side; the reprint was
+      // simply throwing it away and printing a box the same as a bottle.
+      unit: item.unit_name ?? null,
     }
   })
 

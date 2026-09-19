@@ -477,6 +477,13 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       paymentType: payment.paymentType,
       discount,
       isCredit: payment.paidAmount < total,
+      // product_unit_id -> "karobka". Resolved here because this is the only
+      // place holding both the cart and the units table.
+      unitNames: Object.fromEntries(
+        printed.flatMap((l) =>
+          (l.product.units ?? []).map((u) => [u.id, unitName(u.unit_id)] as const),
+        ),
+      ),
     })
 
     await attachReceipt(outcome.seq, slip)
