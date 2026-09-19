@@ -18,16 +18,18 @@ export function Devices({ me }: { me: MeResponse }) {
 
   const thisDevice = getDeviceId()
 
+  function auth() {
+    return {
+      Accept: 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('pos.terminal_token') ?? ''}`,
+    }
+  }
+
   async function load() {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch('/api/pos/v1/terminals', {
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('pos.terminal_token') ?? ''}`,
-        },
-      })
+      const res = await fetch('/api/pos/v1/terminals', { headers: auth() })
       const body = await res.json()
       if (!res.ok) throw new Error(body?.message ?? 'Xatolik')
       setRows(body.data ?? [])
@@ -35,6 +37,42 @@ export function Devices({ me }: { me: MeResponse }) {
       setError(e instanceof Error ? e.message : 'Yuklab bo\'lmadi')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Cut a device off.
+   *
+   * The reason this screen exists — a tablet left in a taxi goes on selling,
+   * and until now the list could only watch it do so. The endpoint was
+   * already there; nothing called it.
+   *
+   * Confirmed rather than instant: the rows look alike, and revoking the
+   * wrong one strands a working till mid-shift.
+   */
+  async function revoke(row: TerminalSummary) {
+    const mine = row.device_id === thisDevice
+
+    const ok = confirm(
+      mine
+        ? `"${row.name}" — SHU QURILMA.\n\nUzsangiz, shu yerda qaytadan kirishingiz kerak ` +
+            "bo'ladi. Yuborilmagan sotuvlar navbatda qoladi. Davom etilsinmi?"
+        : `"${row.name}" uzilsinmi?\n\nO'sha qurilma qaytadan kirmaguncha sotolmaydi. ` +
+            'Navbatdagi yuborilmagan sotuvlari esa yo\'qoladi.',
+    )
+    if (!ok) return
+
+    setError(null)
+    try {
+      const res = await fetch(`/api/pos/v1/terminals/${row.id}`, {
+        method: 'DELETE',
+        headers: auth(),
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(body?.message ?? 'Uzib bo\'lmadi')
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Uzib bo\'lmadi')
     }
   }
 
@@ -76,6 +114,12 @@ export function Devices({ me }: { me: MeResponse }) {
                   : 'hech qachon ulanmagan'}
               </span>
             </span>
+
+            {row.is_active && (
+              <button className="danger ghost" onClick={() => void revoke(row)}>
+                Uzish
+              </button>
+            )}
           </div>
         ))}
 
