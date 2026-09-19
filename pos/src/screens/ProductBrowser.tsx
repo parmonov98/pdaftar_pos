@@ -27,6 +27,15 @@ export type BrowserHandle = {
   move: (delta: number) => void
   pickCurrent: () => void
   hasRows: () => boolean
+  /**
+   * Put the keyboard in the search box.
+   *
+   * Needed as a command, not as a consequence of `focused` changing: after
+   * the cashier clicks a button the pane is still nominally focused, so the
+   * prop does not change, the effect does not re-run, and F3 — the key whose
+   * whole job is "give me the search box" — did nothing at all.
+   */
+  focus: () => void
 }
 
 export const ProductBrowser = forwardRef<BrowserHandle, {
@@ -81,6 +90,7 @@ export const ProductBrowser = forwardRef<BrowserHandle, {
       if (product) onPick(product)
     },
     hasRows: () => rows.length > 0,
+    focus: () => inputRef.current?.focus(),
   }), [rows, cursor, onPick])
 
   function onKeyDown(event: React.KeyboardEvent) {

@@ -290,6 +290,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       if (event.key === 'F3') {
         event.preventDefault()
         setPane('browser')
+        browserRef.current?.focus()
         return
       }
 

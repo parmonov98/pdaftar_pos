@@ -107,6 +107,17 @@ export function Checkout({
           if (e.key === 'Escape' && !busy) {
             e.stopPropagation()
             onCancel()
+            return
+          }
+
+          // Explicit rather than relying on a form's implicit submission.
+          // That default is browser- and input-dependent, and a till runs on
+          // whatever hardware and kiosk browser the shop has; "Enter mostly
+          // works" is not a thing to promise a cashier in writing. Buttons
+          // are left alone — Enter already activates the focused one.
+          if (e.key === 'Enter' && !busy && (e.target as HTMLElement).tagName !== 'BUTTON') {
+            e.preventDefault()
+            void submit()
           }
         }}
       >
