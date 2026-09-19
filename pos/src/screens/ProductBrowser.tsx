@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { formatMoney } from '../sales'
 import type { Product } from '../db'
 
@@ -15,19 +15,28 @@ import type { Product } from '../db'
  * keyboard or the scanner, and moving to a mouse and back costs more than the
  * keystroke saves.
  */
-export function ProductBrowser({
-  products,
-  focused,
-  onPick,
-  onLeave,
-}: {
+/**
+ * What the sale screen can drive from outside.
+ *
+ * The arrow keys are handled once, at the window, rather than on this input:
+ * a cashier who clicked anywhere — a tab, a total, nothing at all — still
+ * expects the arrows to move the list. Keeping the state here and the
+ * keystrokes there is what lets both be true.
+ */
+export type BrowserHandle = {
+  move: (delta: number) => void
+  pickCurrent: () => void
+  hasRows: () => boolean
+}
+
+export const ProductBrowser = forwardRef<BrowserHandle, {
   products: Product[]
   /** Whether this pane currently owns the keyboard. */
   focused: boolean
   onPick: (product: Product) => void
-  /** The cashier pressed Tab or → to hand the keyboard to the cart. */
+  /** The cashier pressed Tab to hand the keyboard to the cart. */
   onLeave: () => void
-}) {
+}>(function ProductBrowser({ products, focused, onPick, onLeave }, ref) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -64,7 +73,22 @@ export function ProductBrowser({
     listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: 'nearest' })
   }, [cursor])
 
+  useImperativeHandle(ref, () => ({
+    move: (delta: number) =>
+      setCursor((c) => Math.max(0, Math.min(c + delta, rows.length - 1))),
+    pickCurrent: () => {
+      const product = rows[cursor]
+      if (product) onPick(product)
+    },
+    hasRows: () => rows.length > 0,
+  }), [rows, cursor, onPick])
+
   function onKeyDown(event: React.KeyboardEvent) {
+    // Handled here AND at the window. Stopping propagation is what keeps the
+    // cursor from moving twice for one press.
+    const mine = ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Enter', 'Escape']
+    if (mine.includes(event.key)) event.stopPropagation()
+
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setCursor((c) => Math.min(c + 1, rows.length - 1))
@@ -163,4 +187,4 @@ export function ProductBrowser({
       </div>
     </div>
   )
-}
+})

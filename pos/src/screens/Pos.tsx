@@ -19,7 +19,7 @@ import { Clients, Products } from './Catalog'
 import { Devices } from './Devices'
 import { Drawer, type View } from './Drawer'
 import { History } from './History'
-import { ProductBrowser } from './ProductBrowser'
+import { ProductBrowser, type BrowserHandle } from './ProductBrowser'
 import { ProductSearch } from './ProductSearch'
 import { Queue } from './Queue'
 import { ReceiptView } from './Receipt'
@@ -88,6 +88,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   const [pane, setPane] = useState<'browser' | 'cart'>('browser')
   const [cartCursor, setCartCursor] = useState(0)
   const cartPaneRef = useRef<HTMLDivElement>(null)
+  const browserRef = useRef<BrowserHandle>(null)
 
   function flipSplit() {
     setSplitDir((d) => {
@@ -305,6 +306,33 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       if (event.key === 'Tab' && pane === 'cart' && !typing) {
         event.preventDefault()
         setPane('browser')
+        return
+      }
+
+      // The product pane. Handled here as well as on its own input, so the
+      // arrows work whether or not the search box happens to hold focus —
+      // the browser stops propagation for the keys it has already handled.
+      if (pane === 'browser') {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          browserRef.current?.move(1)
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          browserRef.current?.move(-1)
+        } else if (event.key === 'PageDown') {
+          event.preventDefault()
+          browserRef.current?.move(10)
+        } else if (event.key === 'PageUp') {
+          event.preventDefault()
+          browserRef.current?.move(-10)
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          browserRef.current?.pickCurrent()
+        } else if (event.key === 'Tab' && !event.shiftKey) {
+          event.preventDefault()
+          setPane('cart')
+        }
+
         return
       }
 
@@ -576,6 +604,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
             <div className={`split ${splitDir}`}>
               <div className="split-pane">
                 <ProductBrowser
+                  ref={browserRef}
                   products={products}
                   focused={pane === 'browser'}
                   onPick={(product) => {
