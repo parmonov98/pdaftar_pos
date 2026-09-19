@@ -271,6 +271,29 @@ class SaleTest extends TestCase
         $this->assertSame($sobir->id, $sobirsSale->fresh()->user_id);
     }
 
+    /**
+     * A till's cached currency list goes stale. The answer must be something
+     * it can act on, not "Server Error" from a foreign key — which reads as
+     * the POS being broken rather than the till needing to sync.
+     */
+    public function test_a_stale_currency_id_is_a_validation_error_not_a_500(): void
+    {
+        $terminal = $this->terminal();
+        $token = $this->user->createToken('t', [PosScope::SALES_WRITE->value]);
+        $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
+
+        $this->withToken($token->plainTextToken)
+            ->postJson('/api/pos/v1/sales', [
+                'client_operation_id' => (string) Str::uuid(),
+                'currency_id' => 9999,
+                'items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('currency_id');
+
+        $this->assertSame(0, Sale::count());
+    }
+
     public function test_an_empty_cart_is_refused(): void
     {
         $this->expectException(BusinessException::class);

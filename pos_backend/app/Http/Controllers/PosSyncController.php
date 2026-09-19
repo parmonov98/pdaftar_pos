@@ -16,7 +16,8 @@ use Pos\Services\PosOperationDispatcher;
 /**
  * The offline till's two halves: what it downloads, and what it sends back.
  */
-class PosSyncController extends Controller {
+class PosSyncController extends Controller
+{
     public function __construct(
         private readonly PosCatalogService $catalog,
         private readonly PosIdempotencyService $idempotency,
@@ -24,7 +25,8 @@ class PosSyncController extends Controller {
     ) {}
 
     /** Everything changed since the till's cursor. */
-    public function pull(Request $request): JsonResponse {
+    public function pull(Request $request): JsonResponse
+    {
         $terminal = $request->attributes->get('pos_terminal');
 
         $data = $request->validate([
@@ -50,7 +52,8 @@ class PosSyncController extends Controller {
     }
 
     /** One product, by barcode or code. The scanner's endpoint. */
-    public function lookup(Request $request): JsonResponse {
+    public function lookup(Request $request): JsonResponse
+    {
         $terminal = $request->attributes->get('pos_terminal');
         $code = trim((string) $request->query('code', ''));
 
@@ -78,7 +81,8 @@ class PosSyncController extends Controller {
      * till would then have no way to make progress except to send them all
      * again, forever.
      */
-    public function push(Request $request): JsonResponse {
+    public function push(Request $request): JsonResponse
+    {
         $terminal = $request->attributes->get('pos_terminal');
         $token = $request->user()?->currentAccessToken();
         $userId = (int) $terminal->user_id;
@@ -138,7 +142,8 @@ class PosSyncController extends Controller {
      * a way the server could not prove left the database untouched is never
      * retried automatically, so somebody has to be able to see it.
      */
-    public function status(Request $request): JsonResponse {
+    public function status(Request $request): JsonResponse
+    {
         $terminal = $request->attributes->get('pos_terminal');
 
         $operations = PosOperation::query()

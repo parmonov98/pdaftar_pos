@@ -18,7 +18,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * business it belongs to without a network call, and a shop that exists only
  * here is a perfectly valid shop.
  */
-class Shop extends Model {
+class Shop extends Model
+{
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
@@ -35,7 +36,8 @@ class Shop extends Model {
         'low_stock_threshold',
     ];
 
-    protected function casts(): array {
+    protected function casts(): array
+    {
         return [
             'is_active' => 'boolean',
             'allow_negative_stock' => 'boolean',
@@ -44,29 +46,35 @@ class Shop extends Model {
         ];
     }
 
-    public function owner(): BelongsTo {
+    public function owner(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'owner_id');
     }
 
-    public function users(): BelongsToMany {
+    public function users(): BelongsToMany
+    {
         return $this->belongsToMany(User::class, 'user_shop')
             ->withPivot('role')
             ->withTimestamps();
     }
 
-    public function terminals(): HasMany {
+    public function terminals(): HasMany
+    {
         return $this->hasMany(PosTerminal::class);
     }
 
-    public function products(): HasMany {
+    public function products(): HasMany
+    {
         return $this->hasMany(Product::class);
     }
 
-    public function units(): HasMany {
+    public function units(): HasMany
+    {
         return $this->hasMany(Unit::class);
     }
 
-    public function currency(): BelongsTo {
+    public function currency(): BelongsTo
+    {
         return $this->belongsTo(Currency::class);
     }
 
@@ -77,11 +85,13 @@ class Shop extends Model {
      * disagree eventually, and the disagreement shows up as a shop that cannot
      * open a till it is entitled to.
      */
-    public function activeTerminalCount(): int {
+    public function activeTerminalCount(): int
+    {
         return $this->terminals()->where('is_active', true)->count();
     }
 
-    public function isLinkedToPdaftar(): bool {
+    public function isLinkedToPdaftar(): bool
+    {
         return $this->pdaftar_shop_id !== null;
     }
 }

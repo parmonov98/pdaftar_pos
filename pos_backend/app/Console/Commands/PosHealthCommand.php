@@ -19,12 +19,14 @@ use Pos\Services\PosIntegrityService;
  *
  * Exit code 1 when anything fails, so `&&` chains do the right thing.
  */
-class PosHealthCommand extends Command {
+class PosHealthCommand extends Command
+{
     protected $signature = 'pos:health {--json : Mashina o\'qishi uchun JSON}';
 
     protected $description = 'pDaftar bilan bog\'liqlikni tekshirish (domen, observerlar, baza, navbat)';
 
-    public function handle(PosIntegrityService $integrity): int {
+    public function handle(PosIntegrityService $integrity): int
+    {
         $result = $integrity->run();
 
         if ($this->option('json')) {

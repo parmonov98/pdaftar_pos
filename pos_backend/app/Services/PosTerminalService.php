@@ -16,7 +16,8 @@ use Pos\Models\UserShop;
 /**
  * Registering, re-registering and revoking tills.
  */
-class PosTerminalService {
+class PosTerminalService
+{
     /**
      * Provision a device and mint its token.
      *
@@ -97,7 +98,8 @@ class PosTerminalService {
     /**
      * Deactivate a till and kill its credential, freeing its kassa slot.
      */
-    public function revoke(PosTerminal $terminal): void {
+    public function revoke(PosTerminal $terminal): void
+    {
         DB::transaction(function () use ($terminal) {
             $this->revokeToken($terminal);
             $terminal->is_active = false;
@@ -115,7 +117,8 @@ class PosTerminalService {
      * tablet — something the mobile app has always allowed. Access is governed
      * entirely by whether the person can sign in to the shop.
      */
-    public function activeTerminalCount(Shop $shop): int {
+    public function activeTerminalCount(Shop $shop): int
+    {
         return PosTerminal::query()
             ->where('shop_id', $shop->id)
             ->where('is_active', true)
@@ -123,7 +126,8 @@ class PosTerminalService {
     }
 
     /** @throws BusinessException */
-    private function assertUserBelongsToShop(User $user, Shop $shop): void {
+    private function assertUserBelongsToShop(User $user, Shop $shop): void
+    {
         $belongs = UserShop::query()
             ->where('user_id', $user->id)
             ->where('shop_id', $shop->id)
@@ -135,7 +139,8 @@ class PosTerminalService {
         }
     }
 
-    private function revokeToken(PosTerminal $terminal): void {
+    private function revokeToken(PosTerminal $terminal): void
+    {
         if ($terminal->access_token_id === null) {
             return;
         }

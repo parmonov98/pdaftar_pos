@@ -25,8 +25,10 @@ use Illuminate\Support\Facades\Schema;
  * We only remember WHICH token is this terminal's, so revoking the terminal
  * revokes exactly one credential and leaves the user's phone logged in.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('pos_terminals', function (Blueprint $table) {
             $table->id();
 
@@ -74,7 +76,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('pos_terminals');
     }
 };

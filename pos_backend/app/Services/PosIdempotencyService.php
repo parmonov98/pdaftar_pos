@@ -49,7 +49,8 @@ use Throwable;
  * commit and this app runs with `after_commit => false`, so an outer transaction
  * would let a worker read rows that are not committed yet.
  */
-class PosIdempotencyService {
+class PosIdempotencyService
+{
     /**
      * @param  callable(): array{data: array, entity?: ?Model}  $handler
      */
@@ -151,7 +152,8 @@ class PosIdempotencyService {
         return PosOperationResult::applied($clientOperationId, $type, $data);
     }
 
-    private function find(PosTerminal $terminal, string $clientOperationId): ?PosOperation {
+    private function find(PosTerminal $terminal, string $clientOperationId): ?PosOperation
+    {
         return PosOperation::query()
             ->where('pos_terminal_id', $terminal->id)
             ->where('client_operation_id', $clientOperationId)
@@ -169,7 +171,8 @@ class PosIdempotencyService {
      * UUID across two cashier actions — and answering it with the first sale's
      * receipt would hide a second, real, lost sale. It is refused loudly.
      */
-    private function verdict(PosOperation $operation, string $type, string $hash): ?PosOperationResult {
+    private function verdict(PosOperation $operation, string $type, string $hash): ?PosOperationResult
+    {
         if ($operation->request_hash !== $hash) {
             return PosOperationResult::failed(
                 $operation->client_operation_id,
@@ -221,7 +224,8 @@ class PosIdempotencyService {
      * treated as unknown-state, because "probably nothing was written" is not
      * a safe basis for replaying a sale.
      */
-    private function isPreWriteRejection(Throwable $e): bool {
+    private function isPreWriteRejection(Throwable $e): bool
+    {
         return $e instanceof ValidationException
             // Covers InsufficientStockException too, which extends it — that one
             // is raised inside StoreDebtUseCase's own transaction, so the debt
@@ -237,13 +241,15 @@ class PosIdempotencyService {
      * as the same operation — otherwise every retry from a re-encoding client
      * would 409.
      */
-    private function hash(array $payload): string {
+    private function hash(array $payload): string
+    {
         $normalized = $this->normalize($payload);
 
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
     }
 
-    private function normalize(mixed $value): mixed {
+    private function normalize(mixed $value): mixed
+    {
         if (! is_array($value)) {
             return $value;
         }
@@ -262,7 +268,8 @@ class PosIdempotencyService {
         return $out;
     }
 
-    private function message(Throwable $e): string {
+    private function message(Throwable $e): string
+    {
         if ($e instanceof ValidationException) {
             return collect($e->errors())->flatten()->implode(' ');
         }
@@ -270,7 +277,8 @@ class PosIdempotencyService {
         return $e->getMessage() !== '' ? $e->getMessage() : 'Nomalum xatolik';
     }
 
-    private function httpStatusFor(Throwable $e): int {
+    private function httpStatusFor(Throwable $e): int
+    {
         return match (true) {
             $e instanceof ValidationException => 422,
             $e instanceof InsufficientStockException => 409,

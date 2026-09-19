@@ -17,8 +17,10 @@ use Illuminate\Support\Facades\Schema;
  * An owner gets a row here too. One membership path, not an owner special case
  * plus a member path that drift apart.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('user_shop', function (Blueprint $table) {
             $table->id();
 
@@ -43,7 +45,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('user_shop');
     }
 };

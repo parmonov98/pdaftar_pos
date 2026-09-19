@@ -24,8 +24,10 @@ use Illuminate\Support\Facades\Schema;
  * a DIFFERENT body. That is a client bug, not a retry, and silently returning
  * the old response would hide it — we answer 409 instead.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('pos_operations', function (Blueprint $table) {
             $table->id();
 
@@ -83,7 +85,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('pos_operations');
     }
 };

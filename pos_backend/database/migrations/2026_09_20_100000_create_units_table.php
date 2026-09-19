@@ -12,8 +12,10 @@ use Illuminate\Support\Facades\Schema;
  * Per shop, not global: one shop's "karobka" is twelve bottles and another's
  * is six, and a shared row would make one of them wrong.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('units', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
@@ -36,7 +38,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('units');
     }
 };

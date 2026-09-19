@@ -27,7 +27,8 @@ use Pos\Constants\PosProvider;
  * @property-read Shop $shop
  * @property-read User $user
  */
-class PosTerminal extends Model {
+class PosTerminal extends Model
+{
     use SoftDeletes;
 
     protected $fillable = [
@@ -49,22 +50,26 @@ class PosTerminal extends Model {
         'last_sync_at' => 'datetime',
     ];
 
-    public function shop(): BelongsTo {
+    public function shop(): BelongsTo
+    {
         return $this->belongsTo(Shop::class);
     }
 
-    public function user(): BelongsTo {
+    public function user(): BelongsTo
+    {
         return $this->belongsTo(User::class);
     }
 
-    public function operations(): HasMany {
+    public function operations(): HasMany
+    {
         return $this->hasMany(PosOperation::class);
     }
 
     /**
      * The Sanctum token this till authenticates with, if it still has one.
      */
-    public function accessToken(): BelongsTo {
+    public function accessToken(): BelongsTo
+    {
         return $this->belongsTo(PersonalAccessToken::class, 'access_token_id');
     }
 }

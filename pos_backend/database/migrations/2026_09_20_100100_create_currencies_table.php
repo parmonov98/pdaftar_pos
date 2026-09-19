@@ -12,8 +12,10 @@ use Illuminate\Support\Facades\Schema;
  * Not per shop — "UZS" means the same everywhere — but seeded per install so
  * an offline POS never waits on a central list.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('currencies', function (Blueprint $table) {
             $table->id();
             $table->string('code', 8)->unique();
@@ -24,7 +26,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('currencies');
     }
 };

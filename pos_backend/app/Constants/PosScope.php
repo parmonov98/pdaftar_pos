@@ -12,7 +12,8 @@ namespace Pos\Constants;
  * of the user's own shop permissions: a token cannot grant its user something
  * the user does not already have, it can only narrow it. Both are checked.
  */
-enum PosScope: string {
+enum PosScope: string
+{
     case CATALOG_READ = 'pos:catalog.read';
     case SALES_WRITE = 'pos:sales.write';
     case PRODUCTS_WRITE = 'pos:products.write';
@@ -22,7 +23,8 @@ enum PosScope: string {
     case CASH_WRITE = 'pos:cash.write';
 
     /** @return string[] */
-    public static function values(): array {
+    public static function values(): array
+    {
         return array_column(self::cases(), 'value');
     }
 
@@ -38,7 +40,8 @@ enum PosScope: string {
      *
      * @return string[]
      */
-    public static function defaultFor(PosProvider $provider): array {
+    public static function defaultFor(PosProvider $provider): array
+    {
         if ($provider->isExternal()) {
             return [
                 self::CATALOG_READ->value,

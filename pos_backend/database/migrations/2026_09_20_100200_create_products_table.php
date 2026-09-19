@@ -13,8 +13,10 @@ use Illuminate\Support\Facades\Schema;
  * `pdaftar_product_id` is null until an import links the two, and stays null
  * forever for a shop that never connects.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
@@ -68,7 +70,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('products');
     }
 };

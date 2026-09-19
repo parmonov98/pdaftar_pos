@@ -12,8 +12,10 @@ use Illuminate\Support\Facades\Schema;
  * Added after `currencies` exists rather than in the original shops migration,
  * because the foreign key needs the table it points at to be there first.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::table('shops', function (Blueprint $table) {
             $table->foreignId('currency_id')->nullable()->after('address')
                 ->constrained('currencies')->nullOnDelete();
@@ -31,7 +33,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::table('shops', function (Blueprint $table) {
             $table->dropConstrainedForeignId('currency_id');
             $table->dropConstrainedForeignId('default_unit_id');

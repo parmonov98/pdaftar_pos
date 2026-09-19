@@ -19,8 +19,10 @@ use Illuminate\Support\Facades\Schema;
  * stands alone or is linked to a pDaftar account, and nothing about the
  * standalone case needs pDaftar to exist or be reachable.
  */
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    public function up(): void
+    {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
 
@@ -51,7 +53,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('users');
     }
 };

@@ -24,7 +24,8 @@ use Pos\Models\StockMovement;
  *     offline all day can sync in either order and land on the same balance.
  *     This is why nothing here ever writes an absolute quantity.
  */
-class PosStockService {
+class PosStockService
+{
     /**
      * Append one movement and refresh the cache.
      *
@@ -73,7 +74,8 @@ class PosStockService {
      * first sale, when the cache is rebuilt from movements that never included
      * it and the opening balance silently disappears.
      */
-    public function recordOpening(Product $product, float $quantity, ?Carbon $occurredAt = null, ?int $userId = null): ?StockMovement {
+    public function recordOpening(Product $product, float $quantity, ?Carbon $occurredAt = null, ?int $userId = null): ?StockMovement
+    {
         if ($quantity == 0.0) {
             return null;
         }
@@ -89,7 +91,8 @@ class PosStockService {
     }
 
     /** Stock leaving on a sale. Never refuses — see PosSaleService. */
-    public function recordSale(Product $product, float $quantity, int $saleId, ?Carbon $occurredAt, ?int $userId): ?StockMovement {
+    public function recordSale(Product $product, float $quantity, int $saleId, ?Carbon $occurredAt, ?int $userId): ?StockMovement
+    {
         return $this->record(
             $product,
             StockMovement::TYPE_SALE,
@@ -141,14 +144,16 @@ class PosStockService {
     }
 
     /** The balance the ledger had at a moment in time. */
-    public function balanceAsOf(Product $product, Carbon $at): float {
+    public function balanceAsOf(Product $product, Carbon $at): float
+    {
         return (float) StockMovement::query()
             ->where('product_id', $product->id)
             ->where('occurred_at', '<=', $at)
             ->sum('quantity');
     }
 
-    public function currentStock(Product $product): float {
+    public function currentStock(Product $product): float
+    {
         return (float) StockMovement::query()
             ->where('product_id', $product->id)
             ->sum('quantity');
@@ -161,7 +166,8 @@ class PosStockService {
      * the ledger read as "sold then returned" — which is a different thing
      * from "never happened", and reports cannot tell them apart afterwards.
      */
-    public function reverseFor(string $sourceType, int $sourceId): int {
+    public function reverseFor(string $sourceType, int $sourceId): int
+    {
         return DB::transaction(function () use ($sourceType, $sourceId) {
             $movements = StockMovement::query()
                 ->where('source_type', $sourceType)
@@ -183,7 +189,8 @@ class PosStockService {
     }
 
     /** Rebuild `products.quantity` from the ledger. */
-    public function refreshCache(Product $product): ?float {
+    public function refreshCache(Product $product): ?float
+    {
         if (! $product->isTracked()) {
             return null;
         }

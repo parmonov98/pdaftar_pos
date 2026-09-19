@@ -18,8 +18,10 @@ use Symfony\Component\HttpFoundation\Response;
  * personal token, and without re-checking membership on every request their
  * till would keep selling out of a shop they were fired from.
  */
-class PosTerminalMiddleware {
-    public function handle(Request $request, Closure $next): Response {
+class PosTerminalMiddleware
+{
+    public function handle(Request $request, Closure $next): Response
+    {
         $user = $request->user();
 
         if ($user === null) {

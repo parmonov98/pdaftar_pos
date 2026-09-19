@@ -19,8 +19,10 @@ use Pos\Services\PosIntegrityService;
  * Extends Laravel's base controller rather than pDaftar's, because pDaftar's
  * pulls in shop-permission traits this endpoint has no use for.
  */
-class PosHealthController extends Controller {
-    public function __invoke(PosIntegrityService $integrity): JsonResponse {
+class PosHealthController extends Controller
+{
+    public function __invoke(PosIntegrityService $integrity): JsonResponse
+    {
         $result = $integrity->run();
 
         return response()->json([

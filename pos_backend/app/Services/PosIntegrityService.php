@@ -24,9 +24,11 @@ use Throwable;
  * one that otherwise breaks silently, which is why they are asserted rather
  * than assumed.
  */
-class PosIntegrityService {
+class PosIntegrityService
+{
     /** @return array{ok: bool, checks: array<int, array{name: string, ok: bool, detail: string}>} */
-    public function run(): array {
+    public function run(): array
+    {
         $checks = [
             $this->database(),
             $this->schema(),
@@ -40,7 +42,8 @@ class PosIntegrityService {
     }
 
     /** The database answers at all. */
-    private function database(): array {
+    private function database(): array
+    {
         try {
             DB::connection()->getPdo();
 
@@ -62,7 +65,8 @@ class PosIntegrityService {
      * issued and then rejected on the next request, which reads as "the till
      * keeps logging me out" rather than as a failed migration.
      */
-    private function schema(): array {
+    private function schema(): array
+    {
         try {
             $required = [
                 'users',
@@ -97,7 +101,8 @@ class PosIntegrityService {
      * still boots and still serves the health endpoint, so without this check
      * the first sign of trouble is a login that hangs.
      */
-    private function queue(): array {
+    private function queue(): array
+    {
         try {
             Redis::connection()->ping();
 
@@ -108,7 +113,8 @@ class PosIntegrityService {
     }
 
     /** @return array{name: string, ok: bool, detail: string} */
-    private function check(string $name, bool $ok, string $detail): array {
+    private function check(string $name, bool $ok, string $detail): array
+    {
         return ['name' => $name, 'ok' => $ok, 'detail' => $detail];
     }
 }

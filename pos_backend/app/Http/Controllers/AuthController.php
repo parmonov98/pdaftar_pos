@@ -31,7 +31,8 @@ use Pos\Models\UserShop;
  * Response shape is {data: {...}} because that is what the till already reads
  * and there is no reason to churn it.
  */
-class AuthController extends Controller {
+class AuthController extends Controller
+{
     /**
      * Register an owner and their first shop, in one step.
      *
@@ -40,7 +41,8 @@ class AuthController extends Controller {
      * someone register and then separately create a shop is a dead end they
      * have to find their own way out of.
      */
-    public function register(Request $request): JsonResponse {
+    public function register(Request $request): JsonResponse
+    {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'phone_number' => ['required', 'string', 'max:20'],
@@ -129,7 +131,8 @@ class AuthController extends Controller {
      * password list across many accounts never trips it; by IP alone, a whole
      * bazaar behind one NAT locks itself out.
      */
-    public function login(Request $request): JsonResponse {
+    public function login(Request $request): JsonResponse
+    {
         $data = $request->validate([
             'phone_number' => ['required', 'string', 'max:20'],
             'password' => ['required', 'string'],
@@ -184,7 +187,8 @@ class AuthController extends Controller {
     }
 
     /** Who am I, and which shops may I open a till in? */
-    public function me(Request $request): JsonResponse {
+    public function me(Request $request): JsonResponse
+    {
         $user = $request->user();
 
         return response()->json([
@@ -201,7 +205,8 @@ class AuthController extends Controller {
      * Not all of them: a cashier signing out of one till must not sign the
      * owner's phone out of another.
      */
-    public function logout(Request $request): JsonResponse {
+    public function logout(Request $request): JsonResponse
+    {
         $request->user()->currentAccessToken()?->delete();
 
         return response()->json(['data' => ['ok' => true]]);
@@ -212,7 +217,8 @@ class AuthController extends Controller {
      * the login handle and a typo'd one is an account nobody can ever sign
      * back into — there is no email to recover it with.
      */
-    private function assertPhoneLooksReal(string $phone): void {
+    private function assertPhoneLooksReal(string $phone): void
+    {
         if (preg_match('/^\+998\d{9}$/', $phone) !== 1) {
             throw ValidationException::withMessages([
                 'phone_number' => ['Telefon raqam +998 bilan boshlanib, 9 ta raqamdan iborat bo\'lishi kerak.'],
@@ -221,7 +227,8 @@ class AuthController extends Controller {
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function shopsFor(User $user): array {
+    private function shopsFor(User $user): array
+    {
         return $user->shops()
             ->get()
             ->map(fn (Shop $shop) => $this->shopPayload($shop, (string) $shop->pivot->role))
@@ -229,7 +236,8 @@ class AuthController extends Controller {
     }
 
     /** @return array<string, mixed> */
-    private function userPayload(User $user): array {
+    private function userPayload(User $user): array
+    {
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -239,7 +247,8 @@ class AuthController extends Controller {
     }
 
     /** @return array<string, mixed> */
-    private function shopPayload(Shop $shop, string $role): array {
+    private function shopPayload(Shop $shop, string $role): array
+    {
         return [
             'id' => $shop->id,
             'name' => $shop->name,

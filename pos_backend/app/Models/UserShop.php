@@ -15,7 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * directly — the same shape it used against pDaftar's user_shops, so the
  * permission check kept its logic and changed only its table.
  */
-class UserShop extends Model {
+class UserShop extends Model
+{
     use SoftDeletes;
 
     protected $table = 'user_shop';
@@ -26,15 +27,18 @@ class UserShop extends Model {
 
     protected $fillable = ['user_id', 'shop_id', 'role'];
 
-    public function user(): BelongsTo {
+    public function user(): BelongsTo
+    {
         return $this->belongsTo(User::class);
     }
 
-    public function shop(): BelongsTo {
+    public function shop(): BelongsTo
+    {
         return $this->belongsTo(Shop::class);
     }
 
-    public function isOwner(): bool {
+    public function isOwner(): bool
+    {
         return $this->role === self::ROLE_OWNER;
     }
 }
