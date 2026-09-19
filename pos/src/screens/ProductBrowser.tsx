@@ -190,7 +190,12 @@ export const ProductBrowser = forwardRef<BrowserHandle, {
               <span className={`browser-qty ${out ? 'out' : ''}`}>
                 {qty === null ? '—' : formatMoney(qty)}
               </span>
-              <span className="browser-price">{formatMoney(product.price ?? 0)}</span>
+              {/* No price is not a price of zero. Printing 0 reads as free,
+                  and it is the one product on the list a cashier must not
+                  ring up without stopping to type a number. */}
+              <span className="browser-price">
+                {product.price == null ? '—' : formatMoney(product.price)}
+              </span>
             </button>
           )
         })}

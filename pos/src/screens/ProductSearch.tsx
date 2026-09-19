@@ -150,7 +150,11 @@ export function ProductSearch({
                     {qty === null ? '—' : formatMoney(qty)}
                   </span>
                 </span>
-                <span className="pr">{formatMoney(product.price ?? 0)}</span>
+                {/* Same as the browser list: an unpriced product says so
+                    rather than claiming to be free. */}
+                <span className="pr">
+                  {product.price == null ? '—' : formatMoney(product.price)}
+                </span>
               </button>
             )
           })}
