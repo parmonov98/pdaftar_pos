@@ -172,7 +172,7 @@ export function ProductForm({
 
           {!editing && (
             <div className="field">
-              <label className="check">
+              <label className="check-row">
                 <input
                   type="checkbox"
                   checked={tracked}
