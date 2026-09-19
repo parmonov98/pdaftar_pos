@@ -820,3 +820,7 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* Keyboard cursor in the customer list — the same marker as the product and
+   basket rows, so the three lists read alike under the arrows. */
+.client-item.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }

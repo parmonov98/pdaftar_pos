@@ -24,6 +24,7 @@ export function ClientPicker({
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
+  const [cursor, setCursor] = useState(0)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPhone, setNewPhone] = useState('')
@@ -37,11 +38,17 @@ export function ClientPicker({
     const alive = clients.filter((c) => !c.deleted && c.name !== WALK_IN_NAME)
     const needle = query.trim().toLowerCase()
 
+    // Digits only, and only when there are any. A needle of "ali" reduces to
+    // "" here, and every string contains "", so the phone branch matched
+    // every customer in the shop and searching by name returned the whole
+    // list unfiltered — the filter looked like it was working and was not.
+    const digits = needle.replace(/\D/g, '')
+
     const list = needle
       ? alive.filter(
           (c) =>
             c.name.toLowerCase().includes(needle) ||
-            (c.phone_number ?? '').replace(/\D/g, '').includes(needle.replace(/\D/g, '')),
+            (digits !== '' && (c.phone_number ?? '').replace(/\D/g, '').includes(digits)),
         )
       : alive
 
@@ -130,10 +137,33 @@ export function ClientPicker({
         <h2>Mijoz tanlash</h2>
 
         <div className="field">
+          {/* Arrows and Enter, like the product browser next to it. Picking a
+              customer sits in the middle of a keyboard-only sale, and having
+              to reach for the mouse here breaks the run for the one kind of
+              sale — nasiya — that always needs a name. */}
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setCursor(0)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setCursor((c) => Math.min(c + 1, matches.length - 1))
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setCursor((c) => Math.max(c - 1, 0))
+              } else if (e.key === 'Enter') {
+                e.preventDefault()
+                const picked = matches[cursor]
+                if (picked) onPick(picked)
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                onClose()
+              }
+            }}
             placeholder="Ism yoki telefon raqam…"
           />
         </div>
@@ -148,11 +178,11 @@ export function ClientPicker({
         </div>
 
         <div className="client-list">
-          {matches.map((client) => (
+          {matches.map((client, index) => (
             <button
               type="button"
               key={client.id}
-              className="client-item"
+              className={`client-item ${index === cursor ? 'on' : ''}`}
               onClick={() => onPick(client)}
             >
               <span className="grow">
@@ -166,7 +196,6 @@ export function ClientPicker({
                     : `${formatMoney(-client.balance)} haqdor`}
                 </span>
               )}
-              {client.is_blocked && <span className="tag">bloklangan</span>}
             </button>
           ))}
 

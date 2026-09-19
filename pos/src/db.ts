@@ -64,7 +64,6 @@ export type Client = {
   address: string | null
   /** What they owe. Computed by the server from sales and payments. */
   balance?: number
-  is_blocked?: boolean
   deleted?: boolean
   updated_at: string | null
 }
