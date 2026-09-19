@@ -295,7 +295,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
       if (event.key === 'F4') {
         event.preventDefault()
-        if (cart.length > 0) setCheckout(true)
+        openCheckout()
         return
       }
 
@@ -434,6 +434,26 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       setPending(await pendingCount())
       setSyncedAt(await lastSyncAt())
     }
+  }
+
+  /**
+   * The one door to the payment step, for the button and for F4 alike.
+   *
+   * A hoisted declaration on purpose: the key handler is installed above the
+   * consts it reads, and this keeps the two paths from drifting. They already
+   * had — F4 walked straight past the unpriced-line check, on the keyboard
+   * route this till was built for.
+   */
+  function openCheckout() {
+    if (cart.length === 0) return
+
+    if (unpriced.length > 0) {
+      say('err', `Narxi yo'q: ${unpriced.map((l) => l.product.name).join(', ')}`)
+      setPane('cart')
+      return
+    }
+
+    setCheckout(true)
   }
 
   async function confirmSale(payment: Omit<Payment, 'discount' | 'clientId'>) {
@@ -931,7 +951,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               <button
                 className="primary"
                 disabled={cart.length === 0 || unpriced.length > 0}
-                onClick={() => setCheckout(true)}
+                onClick={openCheckout}
               >
                 To'lov qilish: {formatMoney(total)} {currencyCode(currencyId)}
               </button>
