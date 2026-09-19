@@ -639,6 +639,28 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .topbar > .primary { padding-left: 10px; padding-right: 10px; font-size: 13px; }
   .topbar .pill { padding: 4px 8px; font-size: 11.5px; }
   .topbar .brand { white-space: nowrap; min-width: 0; }
+
+  /* Once the sidebar stacks under the basket it is taller than the room left
+     for it, and with overflow visible the surplus was simply cut off the
+     bottom of a screen that does not scroll: on a 375pt phone the discount
+     buttons were unreachable, half-drawn behind the totals. The totals and
+     the pay button stay pinned — those are the two things that must never
+     scroll away — and the blocks above them scroll. */
+  .right { overflow-y: auto; }
+
+  /* Pinned to the bottom of the scrolling sidebar. The total and the pay
+     button are the two things a cashier must be able to reach without
+     hunting for them, and letting them scroll away to fix the clipping
+     would just move the problem. */
+  .right > .totals, .right > .actions {
+    flex-shrink: 0;
+    position: sticky;
+    background: var(--panel);
+    z-index: 1;
+  }
+
+  .right > .totals { bottom: 64px; }
+  .right > .actions { bottom: 0; padding-bottom: 8px; }
 }
 
 /* Narrower still, and something has to go. The brand goes rather than
