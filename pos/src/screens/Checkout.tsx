@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatMoney, round2, type Payment } from '../sales'
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -9,6 +9,24 @@ const PAYMENT_LABELS: Record<string, string> = {
 }
 
 const QUICK_NOTES = [1000, 5000, 10000, 50000, 100000]
+
+/**
+ * What the customer plausibly handed over.
+ *
+ * Notes above the total first, then round numbers above it — a 340 000 sale
+ * had no suggestions at all before, because the largest note in circulation
+ * is 100 000 and the list stopped there. Those are the baskets where the
+ * mental arithmetic is hardest and the buttons were missing.
+ */
+function tenderSuggestions(total: number): number[] {
+  const notes = QUICK_NOTES.filter((n) => n > total)
+
+  const rounded = [10_000, 50_000, 100_000]
+    .map((step) => Math.ceil((total + 1) / step) * step)
+    .filter((n) => n > total)
+
+  return [...new Set([...notes, ...rounded])].sort((a, b) => a - b).slice(0, 3)
+}
 
 /**
  * Payment only.
@@ -39,12 +57,22 @@ export function Checkout({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const finishRef = useRef<HTMLButtonElement>(null)
+
+  // Nasiya hides the amount field, so nothing would hold focus and Enter
+  // would land on the document and do nothing — with the dialog still
+  // promising Enter finishes. Put focus on the button it names.
+  useEffect(() => {
+    if (paymentType === null) finishRef.current?.focus()
+  }, [paymentType])
+
   const paidValue = paymentType === null ? 0 : round2(Math.max(0, Number(paid) || 0))
   const change = paidValue > total ? round2(paidValue - total) : 0
   const owed = paidValue < total ? round2(total - paidValue) : 0
   const isCredit = owed > 0
 
-  async function submit() {
+  async function submit(event?: React.FormEvent) {
+    event?.preventDefault()
     setError(null)
 
     if (isCredit && clientId === null) {
@@ -63,8 +91,25 @@ export function Checkout({
   }
 
   return (
-    <div className="overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="overlay" onClick={() => !busy && onCancel()}>
+      {/* Enter finishes, Escape goes back. The till is sold on being usable
+          without a mouse and this dialog was the point where that stopped
+          being true: F4 opened it and then no key did anything at all.
+
+          A real form, so Enter from the amount field submits the way it does
+          in every other input on the machine, and the handler in Pos already
+          steps aside while this is open. */}
+      <form
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && !busy) {
+            e.stopPropagation()
+            onCancel()
+          }
+        }}
+      >
         <h2>To'lov — {formatMoney(total)}</h2>
 
         {error && <div className="notice err">{error}</div>}
@@ -113,7 +158,7 @@ export function Checkout({
               <button type="button" onClick={() => setPaid(String(total))}>
                 Aniq
               </button>
-              {QUICK_NOTES.filter((n) => n > total).slice(0, 3).map((n) => (
+              {tenderSuggestions(total).map((n) => (
                 <button key={n} type="button" onClick={() => setPaid(String(n))}>
                   {formatMoney(n)}
                 </button>
@@ -150,11 +195,15 @@ export function Checkout({
           <button type="button" className="ghost" style={{ flex: 1 }} onClick={onCancel}>
             Orqaga
           </button>
-          <button type="button" className="primary" style={{ flex: 2 }} onClick={submit} disabled={busy}>
+          <button ref={finishRef} type="submit" className="primary" style={{ flex: 2 }} disabled={busy}>
             {busy ? 'Yozilmoqda…' : 'Yakunlash'}
           </button>
         </div>
-      </div>
+
+        <div className="keyhelp" style={{ marginTop: 10 }}>
+          <b>Enter</b> yakunlash · <b>Esc</b> orqaga
+        </div>
+      </form>
     </div>
   )
 }
