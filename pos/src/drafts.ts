@@ -142,7 +142,15 @@ export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
 
   // Scanning adds the base unit: a barcode is on a bottle, not on a box of
   // them. The cashier changes it on the line when they meant the box.
-  const base = product.units?.find((u) => u.is_base) ?? product.units?.[0] ?? null
+  //
+  // Deliberately NOT "whichever unit came first". A product whose karobka was
+  // stored before its dona would have every scan ring up a box: twelve off the
+  // shelf and the wrong price, with nothing on screen saying so. Same trap the
+  // server's baseUnit() had.
+  const base =
+    product.units?.find((u) => u.is_base) ??
+    product.units?.find((u) => u.numerator === 1 && u.denominator === 1) ??
+    null
 
   return [
     ...lines,

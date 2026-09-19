@@ -809,3 +809,14 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .pack-row select { flex: 0 1 140px; }
 .pack-row input { flex: 0 1 90px; }
 .pack-lead { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+/* A line nobody priced. Red on the number itself rather than a banner alone —
+   in a five-line cart the cashier needs to see WHICH one. */
+.cart-row.unpriced {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.cart-row.unpriced input[type='number'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}

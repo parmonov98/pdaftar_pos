@@ -410,6 +410,12 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   }, [active, subtotal])
 
   const total = round2(subtotal - discount)
+
+  // Lines the cashier has not put a price on. Reachable two ways: switching to
+  // a unit the shop never priced, or a product saved without a price at all.
+  // Left alone it rings up as a giveaway and the shortfall only surfaces when
+  // somebody counts the till at closing.
+  const unpriced = cart.filter((l) => !(l.price > 0))
   const currencyId = active?.currencyId ?? shopCurrency
 
   // ─── Actions ───
@@ -646,7 +652,9 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
                 return (
                   <div
-                    className={`cart-row ${pane === 'cart' && index === cartCursor ? 'on' : ''}`}
+                    className={`cart-row ${pane === 'cart' && index === cartCursor ? 'on' : ''} ${
+                      line.price > 0 ? '' : 'unpriced'
+                    }`}
                     key={line.product.id}
                     onClick={() => {
                       setPane('cart')
@@ -702,10 +710,16 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                                     ? {
                                         ...l,
                                         productUnitId: id,
-                                        // The price follows the unit. Leaving
-                                        // the bottle's price on a box is the
-                                        // whole reason this picker exists.
-                                        price: priceFor(line.product, id) ?? l.price,
+                                        // The price follows the unit, and when
+                                        // the shop never set one for this unit
+                                        // the line goes to zero rather than
+                                        // keeping the bottle's price on a box.
+                                        // Carrying it over is the exact loss
+                                        // this picker exists to prevent, and it
+                                        // would look entirely normal on screen.
+                                        // Zero does not: the line turns red and
+                                        // checkout refuses it below.
+                                        price: priceFor(line.product, id) ?? 0,
                                       }
                                     : l,
                                 ),
@@ -905,10 +919,23 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               >
                 Bekor qilish
               </button>
-              <button className="primary" disabled={cart.length === 0} onClick={() => setCheckout(true)}>
+              <button
+                className="primary"
+                disabled={cart.length === 0 || unpriced.length > 0}
+                onClick={() => setCheckout(true)}
+              >
                 To'lov qilish: {formatMoney(total)} {currencyCode(currencyId)}
               </button>
             </div>
+
+            {/* Named, not just blocked: "To'lov qilish" going grey with no
+                reason is worse than the giveaway it prevents. */}
+            {unpriced.length > 0 && (
+              <div className="notice err">
+                Narxi yo'q: {unpriced.map((l) => l.product.name).join(', ')}. Narxni qatorga
+                yozing yoki mahsulotni savatdan chiqaring.
+              </div>
+            )}
 
             {syncedAt && (
               <div className="side-foot">
