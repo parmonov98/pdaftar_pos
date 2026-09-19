@@ -102,6 +102,42 @@ git pull && php artisan pos:health && systemctl reload php-fpm
 
 `pos:health` xato bo'lsa exit kodi 1 qaytaradi, shuning uchun reliz to'xtaydi.
 
+## Deploy: pos.pdaftar.uz (devdata)
+
+POS devdata serverida **alohida servis** sifatida turadi: o'z domeni, o'z
+konteynerlari, o'z porti (8090), o'z hayot sikli. POS o'chsa yoki buzilsa,
+`api.pdaftar.devdata.uz` ishlayveradi — ajratishning asl sababi shu.
+
+Serverda, POS checkout ichidan:
+
+```bash
+./scripts/deploy-devdata.sh
+```
+
+Skript relizni `pos:health` ustida to'xtatadi. Undan oldin ikki narsani
+tekshiradi — ikkalasi ham `docker compose up` ni tushunarsiz xato bilan
+yiqitadi, `pos:health` esa ularni ushlay olmaydi (konteyner umuman ishga
+tushmaydi):
+
+| Tekshiruv | Nega |
+|---|---|
+| `backend/.env` da `COMPOSE_PROJECT_NAME=pdaftar_dev` | `pdaftar_dev-php` obrazi va `pdaftar_dev_network` tarmog'i shu nomdan yasaladi |
+| `pdaftar.backend` yonma-yon turibdimi | `App\` → `../../backend/app/` |
+
+Birinchi deploydan oldin:
+
+```bash
+cp pos_backend/.env.devdata.example pos_backend/.env   # ikkita sirni to'ldiring
+sudo cp deploy/nginx/pos.pdaftar.uz.conf /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/pos.pdaftar.uz.conf /etc/nginx/sites-enabled/
+sudo certbot --nginx -d pos.pdaftar.uz
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+`.env` dagi eng nozik qator — `REDIS_PREFIX`. U APP_NAME dan **olinmaydi**,
+qo'lda `pdaftar_database_` qilib qo'yiladi: aks holda balans joblari pDaftar
+horizoni qaramaydigan navbatga tushadi va hech qanday xato chiqmaydi.
+
 ## CI
 
 `.github/workflows/ci.yml` har PR'da uch ishni bajaradi:
