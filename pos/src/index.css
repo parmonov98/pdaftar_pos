@@ -134,7 +134,10 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
 
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
 
-.app { display: flex; flex-direction: column; height: 100vh; }
+/* 100dvh, with 100vh first as the fallback: on a phone the browser's address
+   bar is counted in 100vh, so the bottom of the app — the pay button — sits
+   under it until the user scrolls. dvh tracks the visible area instead. */
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .muted { color: var(--muted); }
 .grow { flex: 1; min-width: 0; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
@@ -165,6 +168,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 
 /* ─── Layout ─── */
 .main { display: grid; grid-template-columns: 1fr 400px; flex: 1; min-height: 0; }
+/* 1024x768 is a common monoblok panel. At 400px the sale panel leaves the
+   product name about 86px, which truncates most names to nothing useful — the
+   one column a cashier reads to check they scanned the right thing. */
+@media (max-width: 1180px) { .main { grid-template-columns: 1fr 340px; } }
 @media (max-width: 980px) { .main { grid-template-columns: 1fr; } }
 
 .left { display: flex; flex-direction: column; min-height: 0; }
@@ -343,8 +350,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   gap: 8px;
   padding: 0 16px;
 }
-@media (max-width: 1200px) {
-  .cart-head-row, .cart-row { grid-template-columns: 1fr 150px 160px 120px 44px; }
+@media (max-width: 1280px) {
+  /* minmax, not 1fr: the name column is the one a cashier actually reads, so
+     it gets a floor and the numeric columns give way first. */
+  .cart-head-row, .cart-row { grid-template-columns: minmax(150px, 1fr) 132px 142px 112px 44px; }
 }
 
 .cart-head-row {
@@ -571,3 +580,74 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 }
 .linklike:hover { opacity: 0.85; }
 .linklike:focus-visible { outline: 2px solid var(--accent, #4f6ef7); outline-offset: 2px; border-radius: 3px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Telefon va planshet
+
+   The till is built for a monoblok or a laptop: a wide screen, a scanner, a
+   cashier standing at a counter. Phone support is real but secondary — an
+   owner checking a sale, a seller at a market stall with no counter.
+
+   The rule followed here is the one the sale screen breaks worst: nothing may
+   scroll sideways. A cart row is a five-column table (name, qty, price, sum,
+   remove) whose four numeric columns are fixed. That is 474px of hard minimum
+   before the name gets anything, so on a 390px phone the page was 610px wide
+   and every row ran off the right edge.
+
+   Below 700px the row stops being a table row and becomes a card.
+   ═════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 700px) {
+  /* Column headings describe columns. Once the row stacks they line up with
+     nothing, so they would be four labels pointing at the wrong values. */
+  .cart-head-row { display: none; }
+
+  .cart-row {
+    grid-template-columns: 1fr 1fr auto;
+    grid-template-areas:
+      "name  name  del"
+      "qty   price sum";
+    row-gap: 10px;
+    align-items: center;
+  }
+
+  /* Positional rather than semantic because both steppers carry the same
+     class: 2 is quantity, 3 is price, 4 the line total, 5 the remove button.
+     Kept beside the JSX in screens/Pos.tsx, which is where the order lives. */
+  .cart-row .cell.name { grid-area: name; }
+  .cart-row .cell:nth-child(2) { grid-area: qty; }
+  .cart-row .cell:nth-child(3) { grid-area: price; }
+  .cart-row .cell:nth-child(4) { grid-area: sum; }
+  .cart-row .cell:nth-child(5) { grid-area: del; }
+
+  /* Centred under a column heading made sense; centred inside a card does not.
+     The steppers carry their own unit ("dona", "SUM"), which is what tells the
+     two apart now that the headings are gone. */
+  .cart-row .cell.c { justify-content: stretch; }
+  .cart-row .stepper { width: 100%; }
+
+  .cart-row .sum { font-size: 16px; }
+
+  /* The shop and cashier are already the drawer's first two lines. In the top
+     bar they were wrapping the brand onto three lines. */
+  .topbar .meta { display: none; }
+  .topbar .brand { white-space: nowrap; }
+  .topbar { gap: 8px; padding: 8px 12px; }
+
+  /* Stacked, the sale panel sits below a cart that can be any length, so the
+     total and the pay button scroll away exactly when they are needed. */
+  .right { border-left: none; border-top: 1px solid var(--line); }
+  .side-total {
+    position: sticky; bottom: 0; z-index: 5;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* A monoblok is a touchscreen, so this is not only about phones: fingers need
+   a bigger target than a mouse. 44px is the smallest reliably hittable size.
+   Scoped to coarse pointers so a laptop keeps its denser layout. */
+@media (pointer: coarse) {
+  button, .btn, input, select { min-height: 44px; }
+  .cart-row .ghost.x { min-width: 44px; }
+  .drawer-item { padding-top: 13px; padding-bottom: 13px; }
+}
