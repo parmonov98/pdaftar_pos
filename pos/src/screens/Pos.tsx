@@ -648,7 +648,15 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
               {cart.map((line, index) => {
                 const stock = line.product.quantity
-                const oversell = stock !== null && line.quantity > stock
+                // Stock is kept in base units, so the comparison has to be
+                // made there too. Against the raw line quantity, one karobka
+                // against six dona reads as 1 > 6 and says nothing while it
+                // takes the shelf to −6.
+                const lineUnit = line.product.units?.find((u) => u.id === line.productUnitId)
+                const lineBase = lineUnit
+                  ? (line.quantity * lineUnit.numerator) / lineUnit.denominator
+                  : line.quantity
+                const oversell = stock !== null && lineBase > stock
 
                 return (
                   <div
@@ -671,7 +679,8 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                         // the shortfall is recorded as negative stock, which is
                         // a visible problem — unlike a refused sale.
                         <div className="warn">
-                          Qoldiqdan ko'p ({formatMoney(stock!)} bor) — minusga tushadi
+                          Qoldiqdan ko'p — {formatMoney(lineBase)} kerak, {formatMoney(stock!)}{' '}
+                          {unitName(line.product.unit_id)} bor. Minusga tushadi.
                         </div>
                       )}
                     </div>
