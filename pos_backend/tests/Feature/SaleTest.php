@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Pos\Constants\PosScope;
 use Pos\Exceptions\BusinessException;
+use Pos\Models\PosOperation;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
 use Pos\Models\Sale;
@@ -28,7 +29,8 @@ use Tests\TestCase;
  * drifts from its ledger, a retry that rings a sale up twice, a stocktake that
  * erases another till's morning.
  */
-class SaleTest extends TestCase {
+class SaleTest extends TestCase
+{
     use RefreshDatabase;
 
     private Shop $shop;
@@ -37,7 +39,8 @@ class SaleTest extends TestCase {
 
     private Product $cola;
 
-    protected function setUp(): void {
+    protected function setUp(): void
+    {
         parent::setUp();
 
         $this->user = User::create([
@@ -71,7 +74,8 @@ class SaleTest extends TestCase {
         $this->cola->refresh();
     }
 
-    private function sell(array $items, array $extra = [], ?Carbon $at = null): Sale {
+    private function sell(array $items, array $extra = [], ?Carbon $at = null): Sale
+    {
         $terminal = $this->terminal();
 
         return app(PosSaleService::class)->create(
@@ -82,14 +86,16 @@ class SaleTest extends TestCase {
         );
     }
 
-    private function terminal(): PosTerminal {
+    private function terminal(): PosTerminal
+    {
         return PosTerminal::firstOrCreate(
             ['shop_id' => $this->shop->id, 'device_id' => 'test-device'],
             ['user_id' => $this->user->id, 'name' => 'Test kassa', 'provider' => 'pdaftar_pos', 'is_active' => true],
         );
     }
 
-    public function test_a_sale_writes_its_lines_and_takes_the_stock(): void {
+    public function test_a_sale_writes_its_lines_and_takes_the_stock(): void
+    {
         $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]]);
 
         $this->assertSame('24000.000000', $sale->total);
@@ -98,7 +104,8 @@ class SaleTest extends TestCase {
     }
 
     /** The line keeps the name it was sold under, so an old receipt still reads. */
-    public function test_a_sale_line_snapshots_the_product_name(): void {
+    public function test_a_sale_line_snapshots_the_product_name(): void
+    {
         $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]);
 
         $this->cola->update(['name' => 'Boshqa nom']);
@@ -106,7 +113,8 @@ class SaleTest extends TestCase {
         $this->assertSame('Cola 1.5L', $sale->items->first()->name);
     }
 
-    public function test_the_discount_never_exceeds_the_subtotal(): void {
+    public function test_the_discount_never_exceeds_the_subtotal(): void
+    {
         $sale = $this->sell(
             [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 10000]],
             ['discount_amount' => 999999],
@@ -121,14 +129,16 @@ class SaleTest extends TestCase {
      * with cash nobody will take; a negative balance is a visible problem
      * somebody can fix.
      */
-    public function test_selling_more_than_the_stock_is_allowed_and_goes_negative(): void {
+    public function test_selling_more_than_the_stock_is_allowed_and_goes_negative(): void
+    {
         $this->sell([['product_id' => $this->cola->id, 'quantity' => 15, 'price' => 12000]]);
 
         $this->assertSame(-5.0, (float) $this->cola->fresh()->quantity);
     }
 
     /** NULL stock means "never inventoried" — selling it must not invent a balance. */
-    public function test_an_untracked_product_stays_untracked_after_a_sale(): void {
+    public function test_an_untracked_product_stays_untracked_after_a_sale(): void
+    {
         $service = Product::create([
             'shop_id' => $this->shop->id,
             'name' => 'Yetkazib berish',
@@ -142,7 +152,8 @@ class SaleTest extends TestCase {
         $this->assertSame(0, StockMovement::where('product_id', $service->id)->count());
     }
 
-    public function test_a_line_naming_another_shops_product_is_refused(): void {
+    public function test_a_line_naming_another_shops_product_is_refused(): void
+    {
         $other = Shop::create(['name' => 'Boshqa', 'owner_id' => $this->user->id]);
         $theirs = Product::create(['shop_id' => $other->id, 'name' => 'Ularniki', 'price' => 1, 'quantity' => 5]);
 
@@ -151,7 +162,8 @@ class SaleTest extends TestCase {
     }
 
     /** Cancelling returns the stock by removing the movements, not by offsetting them. */
-    public function test_cancelling_a_sale_returns_the_stock_and_keeps_the_row(): void {
+    public function test_cancelling_a_sale_returns_the_stock_and_keeps_the_row(): void
+    {
         $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 3, 'price' => 12000]]);
         $this->assertSame(7.0, (float) $this->cola->fresh()->quantity);
 
@@ -162,7 +174,8 @@ class SaleTest extends TestCase {
         $this->assertSame(0, StockMovement::where('source_type', 'sale')->where('source_id', $sale->id)->count());
     }
 
-    public function test_cancelling_twice_is_not_an_error(): void {
+    public function test_cancelling_twice_is_not_an_error(): void
+    {
         $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]);
 
         app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
@@ -172,7 +185,8 @@ class SaleTest extends TestCase {
     }
 
     /** The cache is only ever a projection of the ledger. */
-    public function test_the_quantity_cache_equals_the_ledger(): void {
+    public function test_the_quantity_cache_equals_the_ledger(): void
+    {
         $this->sell([['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]]);
         $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]);
 
@@ -188,7 +202,8 @@ class SaleTest extends TestCase {
      * Deltas commute, so the arrival order cannot change the balance — this is
      * the property the whole ledger design exists to get.
      */
-    public function test_sales_arriving_out_of_order_land_on_the_same_balance(): void {
+    public function test_sales_arriving_out_of_order_land_on_the_same_balance(): void
+    {
         $stock = app(PosStockService::class);
 
         // B's later sale arrives first, A's earlier sale second.
@@ -203,7 +218,8 @@ class SaleTest extends TestCase {
      * avoid: a count taken at 10:00 and synced at 18:00 must be measured
      * against the 10:00 balance, or it erases the sale B made at 14:00.
      */
-    public function test_a_late_stocktake_is_measured_against_the_balance_at_its_own_time(): void {
+    public function test_a_late_stocktake_is_measured_against_the_balance_at_its_own_time(): void
+    {
         $stock = app(PosStockService::class);
 
         // B's sale at 14:00 arrives first: 10 - 3 = 7.
@@ -219,7 +235,8 @@ class SaleTest extends TestCase {
         $this->assertSame(7.0, (float) $this->cola->fresh()->quantity);
     }
 
-    public function test_a_stocktake_records_the_difference_it_actually_found(): void {
+    public function test_a_stocktake_records_the_difference_it_actually_found(): void
+    {
         $stock = app(PosStockService::class);
 
         $stock->recordStocktake($this->cola, 8, Carbon::parse('2026-09-19 12:00'), $this->user->id);
@@ -232,7 +249,8 @@ class SaleTest extends TestCase {
     }
 
     /** Attribution is captured at write time, not read off the terminal later. */
-    public function test_a_sale_records_which_cashier_rang_it_up(): void {
+    public function test_a_sale_records_which_cashier_rang_it_up(): void
+    {
         $sobir = User::create(['name' => 'Sobir', 'phone_number' => '+998907654321', 'password' => 'kassa12345']);
         UserShop::create(['user_id' => $sobir->id, 'shop_id' => $this->shop->id, 'role' => UserShop::ROLE_SELLER]);
 
@@ -253,13 +271,15 @@ class SaleTest extends TestCase {
         $this->assertSame($sobir->id, $sobirsSale->fresh()->user_id);
     }
 
-    public function test_an_empty_cart_is_refused(): void {
+    public function test_an_empty_cart_is_refused(): void
+    {
         $this->expectException(BusinessException::class);
         $this->sell([]);
     }
 
     /** A retry must not ring the same sale up twice. */
-    public function test_the_same_operation_id_applies_once(): void {
+    public function test_the_same_operation_id_applies_once(): void
+    {
         $terminal = $this->terminal();
         $token = $this->user->createToken('t', [PosScope::SALES_WRITE->value]);
         $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
@@ -278,6 +298,16 @@ class SaleTest extends TestCase {
         $second->assertSuccessful();
         $this->assertFalse($first->json('data.replayed'));
         $this->assertTrue($second->json('data.replayed'));
+
+        // The till files its own rows under the server's id, so the response
+        // has to carry it — on the replay too, or a retry leaves the till
+        // unable to reconcile the sale it already made.
+        $this->assertSame(Sale::first()->id, $first->json('data.data.sale.id'));
+        $this->assertSame(Sale::first()->id, $second->json('data.data.sale.id'));
+
+        // And pos_operations must name the row it produced, which is how a
+        // receipt is traced back when someone asks about it weeks later.
+        $this->assertSame(Sale::first()->id, PosOperation::first()->entity_id);
         $this->assertSame(1, Sale::count());
         $this->assertSame(8.0, (float) $this->cola->fresh()->quantity);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pos\Services;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 use Pos\Constants\PosScope;
@@ -64,14 +65,26 @@ class PosOperationDispatcher {
             throw new BusinessException('Bu amal uchun ruxsat yo\'q: '.$type);
         }
 
+        // The shape PosIdempotencyService stores: `entity` is what the
+        // operation produced — it becomes pos_operations.entity_id, which is
+        // how support traces a receipt back to a row — and `data` is what the
+        // till is handed back, including on a replay.
         return match ($type) {
-            'sale.create' => ['sale' => $this->sales->create($terminal, $payload, $occurredAt, $userId)->toArray()],
-            'sale.cancel' => ['sale' => $this->sales->cancel($terminal, (int) ($payload['sale_id'] ?? 0), $occurredAt)->toArray()],
-            'product.create' => ['product' => $this->createProduct($terminal, $payload, $occurredAt, $userId)->toArray()],
-            'product.update' => ['product' => $this->updateProduct($terminal, $payload)->toArray()],
-            'stock.movement' => ['movement' => $this->stockMovement($terminal, $payload, $occurredAt, $userId)],
-            'stock.stocktake' => ['movement' => $this->stocktake($terminal, $payload, $occurredAt, $userId)],
+            'sale.create' => $this->wrap($sale = $this->sales->create($terminal, $payload, $occurredAt, $userId), 'sale', $sale->toArray()),
+            'sale.cancel' => $this->wrap($cancelled = $this->sales->cancel($terminal, (int) ($payload['sale_id'] ?? 0), $occurredAt), 'sale', $cancelled->toArray()),
+            'product.create' => $this->wrap($created = $this->createProduct($terminal, $payload, $occurredAt, $userId), 'product', $created->toArray()),
+            'product.update' => $this->wrap($updated = $this->updateProduct($terminal, $payload), 'product', $updated->toArray()),
+            'stock.movement' => $this->wrap(null, 'movement', $this->stockMovement($terminal, $payload, $occurredAt, $userId)),
+            'stock.stocktake' => $this->wrap(null, 'movement', $this->stocktake($terminal, $payload, $occurredAt, $userId)),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $data
+     * @return array{entity: Model|null, data: array<string, mixed>}
+     */
+    private function wrap(?Model $entity, string $key, ?array $data): array {
+        return ['entity' => $entity, 'data' => $data === null ? [] : [$key => $data]];
     }
 
     /** @throws BusinessException */

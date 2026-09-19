@@ -16,10 +16,12 @@ use Tests\TestCase;
  * was written by pDaftar's code. The POS owns its data now, so the couplings
  * those checks defended no longer exist to be defended.
  */
-class PosHealthTest extends TestCase {
+class PosHealthTest extends TestCase
+{
     use RefreshDatabase;
 
-    public function test_health_endpoint_answers_in_json(): void {
+    public function test_health_endpoint_answers_in_json(): void
+    {
         $response = $this->getJson('/api/pos/v1/health');
 
         $response->assertJsonStructure([
@@ -35,7 +37,8 @@ class PosHealthTest extends TestCase {
      * The schema check is the one that earns its place: a missing table does
      * not announce itself, it shows up as "the till keeps logging me out".
      */
-    public function test_schema_check_passes_on_a_migrated_database(): void {
+    public function test_schema_check_passes_on_a_migrated_database(): void
+    {
         $checks = collect($this->getJson('/api/pos/v1/health')->json('checks'))
             ->keyBy('name');
 
@@ -47,7 +50,8 @@ class PosHealthTest extends TestCase {
     }
 
     /** Nothing here should ask about pDaftar any more. */
-    public function test_no_check_depends_on_pdaftar(): void {
+    public function test_no_check_depends_on_pdaftar(): void
+    {
         $names = collect($this->getJson('/api/pos/v1/health')->json('checks'))
             ->pluck('name')
             ->all();
