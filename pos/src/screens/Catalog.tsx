@@ -205,7 +205,6 @@ export function Clients() {
                   : `${formatMoney(-client.balance)} haqdor`}
               </span>
             )}
-            {client.is_blocked && <span className="tag danger">bloklangan</span>}
           </div>
         ))}
       </div>
