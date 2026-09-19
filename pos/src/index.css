@@ -820,9 +820,17 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .cart-row .cell.c { justify-content: stretch; }
   .cart-row .stepper { width: 100%; }
 
-  /* The number takes the slack; the steppers and the unit keep their size. */
-  .cart-row .cell:nth-child(2) .stepper input { flex: 1 1 auto; min-width: 0; }
-  .cart-row .cell:nth-child(2) .unit-select { flex: 0 0 auto; max-width: none; }
+  /* The number takes the slack; the steppers and the unit keep their size.
+     Both halves of that matter: uncapped, the select grew to 331px and left
+     the quantity 18, which is the same unreadable cell as before with the
+     blame moved. min-width on the number is what actually holds the line. */
+  .cart-row .cell:nth-child(2) .stepper { overflow: hidden; }
+  .cart-row .cell:nth-child(2) .stepper input {
+    flex: 1 1 auto; min-width: 56px; width: auto;
+  }
+  .cart-row .cell:nth-child(2) .unit-select {
+    flex: 0 1 auto; max-width: 110px; text-align: right;
+  }
 }
 
 /* The unit a line is sold in. Sits inside the stepper where the plain unit
