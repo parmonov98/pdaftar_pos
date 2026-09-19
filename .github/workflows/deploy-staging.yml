@@ -1,0 +1,132 @@
+name: Deploy staging
+
+# Every push to main that touches shipped code. CI (ci.yml) runs on the same
+# push; this does not wait for it, because the gate that actually protects the
+# staging box is `pos:health` at the end of the deploy — it asserts things a
+# cloud runner cannot: the real database, the real Redis namespace, the
+# observers attached to the real shared domain.
+on:
+    push:
+        branches: [main]
+        paths:
+            - 'pos/**'
+            - 'pos_backend/**'
+            - 'scripts/deploy-staging.sh'
+            - '.github/workflows/deploy-staging.yml'
+    workflow_dispatch:
+
+# A till deploy that overtakes another till deploy leaves the box mid-migration.
+concurrency:
+    group: deploy-staging
+    cancel-in-progress: false
+
+jobs:
+    # ── Build the till here, not there ────────────────────────────────────
+    # The staging instance has 1-2 GB. vite + tsc on a box that size is an
+    # OOM kill, and the failure mode is a truncated dist/ that serves a blank
+    # page with a 200. Build where there is RAM; ship the output.
+    build:
+        name: kassa (vite build)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+                  cache: npm
+                  cache-dependency-path: pos/package-lock.json
+
+            - run: npm ci
+              working-directory: pos
+
+            - run: npm run build
+              working-directory: pos
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: pos-dist
+                  path: pos/dist
+                  retention-days: 5
+                  if-no-files-found: error
+
+    deploy:
+        name: deploy
+        needs: build
+        runs-on: ubuntu-latest
+        environment: staging
+        steps:
+            - uses: actions/download-artifact@v4
+              with:
+                  name: pos-dist
+                  path: dist
+
+            - name: Setup SSH
+              uses: webfactory/ssh-agent@v0.9.0
+              with:
+                  ssh-private-key: ${{ secrets.POS_SSH_KEY }}
+
+            # Pinned host key, not accept-new. This runner gets a different IP
+            # every run, so TOFU here trusts whoever answers on port 22 — which
+            # is the one thing a deploy key must not do.
+            - name: Known hosts
+              env:
+                  KNOWN_HOSTS: ${{ secrets.POS_KNOWN_HOSTS }}
+              run: |
+                  mkdir -p ~/.ssh && chmod 700 ~/.ssh
+                  printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+                  chmod 600 ~/.ssh/known_hosts
+
+            - name: Ship the till
+              env:
+                  HOST: ${{ secrets.POS_SSH_HOST }}
+                  USER_NAME: ${{ secrets.POS_SSH_USER }}
+                  POS_PATH: /var/www/pos/pdaftar_pos
+              run: |
+                  ssh "$USER_NAME@$HOST" "mkdir -p $POS_PATH/pos/dist"
+                  # --delete: a stale hashed bundle left behind is a file the
+                  # new index.html never references but the browser may still
+                  # have cached a pointer to.
+                  rsync -az --delete ./dist/ "$USER_NAME@$HOST:$POS_PATH/pos/dist/"
+
+            - name: Deploy
+              env:
+                  HOST: ${{ secrets.POS_SSH_HOST }}
+                  USER_NAME: ${{ secrets.POS_SSH_USER }}
+                  POS_PATH: /var/www/pos/pdaftar_pos
+              run: |
+                  ssh "$USER_NAME@$HOST" \
+                      "cd $POS_PATH && ./scripts/deploy-staging.sh --ref ${{ github.sha }}"
+
+            # Independent of the deploy script's own gate: this asks the
+            # question over the public name, the way a till does, so a broken
+            # vhost or an expired certificate fails the run rather than waiting
+            # to be discovered by a cashier.
+            - name: Verify over HTTPS
+              env:
+                  BASE: ${{ secrets.POS_PUBLIC_URL }}
+                  HOST: ${{ secrets.POS_SSH_HOST }}
+                  USER_NAME: ${{ secrets.POS_SSH_USER }}
+              run: |
+                  code=$(curl -sS -o /tmp/health.json -w '%{http_code}' -m 20 "$BASE/api/pos/v1/health")
+                  echo "HTTP $code"; cat /tmp/health.json; echo
+
+                  # The same switch the deploy script obeys, read from the box
+                  # rather than duplicated here — one place to turn the gate on.
+                  gate=$(ssh "$USER_NAME@$HOST" \
+                      "grep '^POS_HEALTH_GATE=' /var/www/pos/pdaftar_pos/pos_backend/.env | cut -d= -f2-" \
+                      | tr -d "\"' \r")
+                  echo "POS_HEALTH_GATE=$gate"
+
+                  if [ "$gate" = "off" ]; then
+                      # 503 is the POS reporting its own broken link, which is
+                      # the known state while the database is undecided. It is
+                      # still proof the vhost, TLS and proxy all work. Anything
+                      # else — 502, 404, 000 — is the pipeline being wrong.
+                      case "$code" in
+                          200|503) echo "OK (gate off)" ;;
+                          *) echo "Kutilmagan javob"; exit 1 ;;
+                      esac
+                  else
+                      [ "$code" = "200" ]
+                  fi

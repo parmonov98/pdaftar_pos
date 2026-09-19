@@ -29,8 +29,12 @@ return new class extends Migration {
         Schema::create('pos_operations', function (Blueprint $table) {
             $table->id();
 
+            // This one stays a real foreign key: pos_terminals is the POS's
+            // own table, in the POS's own database. Cascade still applies.
             $table->foreignId('pos_terminal_id')->constrained('pos_terminals')->cascadeOnDelete();
-            $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
+            // pDaftar's shop, by id only — `shops` lives in pDaftar's database
+            // on pDaftar's server. See the note in the pos_terminals migration.
+            $table->unsignedBigInteger('shop_id');
 
             // UUID minted on the till. Unique PER TERMINAL, not globally: two
             // tills generating the same UUID is astronomically unlikely, but
