@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Client, type Product } from '../db'
 import { formatMoney, WALK_IN_NAME } from '../sales'
+import { ProductForm } from './ProductForm'
 
 /**
  * Read-only browsing of the two lists the seller occasionally needs to look
@@ -16,6 +17,9 @@ import { formatMoney, WALK_IN_NAME } from '../sales'
 export function Products() {
   const [query, setQuery] = useState('')
   const [onlyTracked, setOnlyTracked] = useState(false)
+
+  // null = closed, 'new' = creating, Product = editing that one.
+  const [editing, setEditing] = useState<Product | 'new' | null>(null)
 
   const products = useLiveQuery(() => db.products.toArray(), [], [] as Product[])
 
@@ -51,6 +55,9 @@ export function Products() {
         <button className={onlyTracked ? 'primary' : 'ghost'} onClick={() => setOnlyTracked((v) => !v)}>
           Faqat hisobdagilar
         </button>
+        <button className="primary" onClick={() => setEditing('new')}>
+          + Yangi mahsulot
+        </button>
       </div>
 
       <div className="view-summary">
@@ -63,9 +70,23 @@ export function Products() {
       <div className="view-body">
         {rows.length === 0 && (
           <div className="cart-empty">
-            {products.length === 0
-              ? 'Katalog hali yuklanmagan. "Sinxronlash" tugmasini bosing.'
-              : 'Mahsulot topilmadi'}
+            {products.length === 0 ? (
+              <>
+                {/* A brand-new shop has an empty catalogue and nothing to sell.
+                    Telling it to press Sinxronlash is the wrong instruction —
+                    there is nothing on the server either. */}
+                <div>Hali mahsulot yo'q.</div>
+                <button
+                  className="primary"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setEditing('new')}
+                >
+                  Birinchi mahsulotni qo'shish
+                </button>
+              </>
+            ) : (
+              'Mahsulot topilmadi'
+            )}
           </div>
         )}
 
@@ -74,7 +95,14 @@ export function Products() {
           const state = qty === null ? '' : qty <= 0 ? 'out' : qty <= (product.low_stock_threshold ?? 0) ? 'low' : ''
 
           return (
-            <div className="list-row" key={product.id}>
+            <div
+              className="list-row tappable"
+              key={product.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setEditing(product)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setEditing(product)}
+            >
               <span className="grow">
                 <span className="nm">{product.name}</span>
                 <span className="sub">{product.barcode ?? product.code ?? '—'}</span>
@@ -89,6 +117,13 @@ export function Products() {
           )
         })}
       </div>
+
+      {editing !== null && (
+        <ProductForm
+          product={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }

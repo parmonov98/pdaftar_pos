@@ -311,7 +311,11 @@ export function pullCatalog(params: {
   if (params.entities?.length) q.set('entities', params.entities.join(','))
   q.set('limit', String(params.limit ?? 500))
 
-  return pos<PullResponse & { success: boolean }>(`/sync/pull?${q.toString()}`)
+  // Unwrapped, like every other call here. Without the `.data` the till reads
+  // `next_since` off the envelope instead of the payload, stores an empty
+  // cursor, and hands absorb() the envelope — so a pull that returned a full
+  // catalogue quietly saves nothing and reports success.
+  return pos<{ data: PullResponse }>(`/sync/pull?${q.toString()}`).then((r) => r.data)
 }
 
 export type OperationResult = {
@@ -380,6 +384,41 @@ export function fetchRecentSales(params: { limit?: number; mine?: boolean } = {}
   if (params.mine) q.set('mine', '1')
 
   return pos<{ data: RecentSale[] }>(`/sales/recent?${q.toString()}`).then((r) => r.data)
+}
+
+export type ProductInput = {
+  name: string
+  barcode?: string | null
+  code?: string | null
+  price?: number | null
+  unit_id?: number | null
+  currency_id?: number | null
+  /** Absent = stock not tracked. NOT the same as 0 — see the backend. */
+  quantity?: number | null
+  low_stock_threshold?: number | null
+}
+
+/**
+ * Create a product.
+ *
+ * Online only, deliberately. The cart addresses products by the server's id,
+ * and a product created offline has none until it syncs — so it could be put
+ * in a basket that then names something the server has never heard of.
+ * Selling stays fully offline; adding to the catalogue is a back-office job
+ * that can wait for a signal.
+ */
+export function createProduct(input: ProductInput): Promise<{ id: number }> {
+  return pos<{ data: { data: { product: { id: number } } } }>('/products', {
+    method: 'POST',
+    body: JSON.stringify({ client_operation_id: crypto.randomUUID(), ...input }),
+  }).then((r) => r.data.data.product)
+}
+
+export function updateProduct(id: number, input: Partial<ProductInput>): Promise<{ id: number }> {
+  return pos<{ data: { data: { product: { id: number } } } }>('/products', {
+    method: 'PATCH',
+    body: JSON.stringify({ client_operation_id: crypto.randomUUID(), id, ...input }),
+  }).then((r) => r.data.data.product)
 }
 
 export function lookupByCode(code: string) {
