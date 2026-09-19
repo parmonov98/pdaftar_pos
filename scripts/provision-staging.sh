@@ -154,7 +154,12 @@ sudo nginx -t && sudo systemctl reload nginx
 # The till is rsynced by CI and is not here on a fresh box. Without this,
 # nginx answers / with 404 from a root that does not exist, which reads like a
 # broken vhost rather than "nothing deployed yet".
-sudo mkdir -p "$POS_DIR/pos/dist"
+#
+# Created WITHOUT sudo, and that is the point: CI rsyncs into this directory
+# as the deploy user. A root-owned dist/ fails the deploy with
+# "mkdir .../assets failed: Permission denied", several steps away from the
+# line that caused it.
+mkdir -p "$POS_DIR/pos/dist"
 
 if sudo test -d "/etc/letsencrypt/live/$DOMAIN"; then
     echo "   sertifikat bor"
