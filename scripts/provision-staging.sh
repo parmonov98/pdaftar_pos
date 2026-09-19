@@ -148,26 +148,31 @@ if [ "${has_shops:-0}" = "0" ]; then
         [ -f "$candidate" ] && { dump="$candidate"; break; }
     done
 
-    [ -n "$dump" ] || die "pDaftar sxemasi yoq va dump ham topilmadi.
-
-Manbadan (masalan devdata) tuzilmani oling — MA'LUMOTSIZ:
-
-    ssh devdata 'sudo mysqldump --no-data --single-transaction \\
-        --routines --events api_pdaftar_devdata_uz | gzip' \\
-        > pdaftar-schema.sql.gz
-    scp pdaftar-schema.sql.gz <bu-server>:$ROOT_DIR/
-
-Keyin shu scriptni qayta ishga tushiring. --no-data ataylab: staging kassa
-haqiqiy do'konlarning hisob kitobini saqlamasligi kerak."
-
-    echo "   import: $dump"
-    if [ "${dump##*.}" = "gz" ]; then
-        gunzip -c "$dump"
+    if [ -n "$dump" ]; then
+        echo "   import: $dump"
+        if [ "${dump##*.}" = "gz" ]; then gunzip -c "$dump"; else cat "$dump"; fi \
+            | $DOCKER compose exec -T mariadb sh -c \
+                'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" "'"$db_name"'"' \
+            || die "sxema importi muvaffaqiyatsiz."
     else
-        cat "$dump"
-    fi | $DOCKER compose exec -T mariadb sh -c \
-        'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" "'"$db_name"'"' \
-        || die "sxema importi muvaffaqiyatsiz."
+        # Not fatal, deliberately. Deployment and the schema are separate
+        # decisions: the pipeline can be stood up and proven while how the POS
+        # reaches a pDaftar database is still open. What must NOT pass
+        # silently is the consequence — an empty database is a POS that takes
+        # a sale and writes it nowhere. So it is loud here, pos:health says it
+        # on every deploy, and POS_HEALTH_GATE decides whether it stops one.
+        SCHEMA_MISSING=1
+        printf '\n   \033[33mOGOHLANTIRISH: pDaftar sxemasi yoq.\033[0m\n'
+        cat <<WARN
+   POS ishga tushadi, lekin SOTUV YOZA OLMAYDI. Deploy quvuri baribir ishlaydi.
+
+   Sxema kerak bo'lganda (MA'LUMOTSIZ):
+     ssh devdata 'sudo mysqldump --no-data --single-transaction \
+         --routines --events api_pdaftar_devdata_uz | gzip' > pdaftar-schema.sql.gz
+     scp pdaftar-schema.sql.gz <bu-server>:$ROOT_DIR/
+     ./scripts/provision-staging.sh $DOMAIN
+WARN
+    fi
 else
     echo "   allaqachon bor"
 fi
@@ -208,8 +213,29 @@ fi
 
 # ── Gate ───────────────────────────────────────────────────────────────────
 step "Yakuniy tekshiruv: pos:health"
-$DOCKER compose exec -T php-pos php artisan pos:health || \
-    die "pos:health xato qaytardi. POSni trafikka qoymang — bu xatolar jimgina buziladi."
+if $DOCKER compose exec -T php-pos php artisan pos:health; then
+    :
+elif [ "${SCHEMA_MISSING:-0}" = "1" ]; then
+    # Expected: there is no pDaftar schema yet, so the checks that read it
+    # cannot pass. Said plainly rather than swallowed.
+    printf '\n\033[33mpos:health xato qaytardi — sxema yoqligi uchun, kutilgan holat.\033[0m\n'
+    printf 'Quvur tayyor; POS sotuv yoza olmaydi.\n'
+else
+    die "pos:health xato qaytardi va buni sxema yoqligi bilan izohlab bolmaydi.
+POSni trafikka qoymang — bu xatolar jimgina buziladi."
+fi
+
+# The deploy gate, written where the deploy reads it. On by default: a release
+# that breaks the link to pDaftar's domain must stop. Off only while the
+# database question is open, because until then every deploy would fail on the
+# one thing nobody has decided yet.
+if ! grep -q '^POS_HEALTH_GATE=' "$ENV_FILE"; then
+    if [ "${SCHEMA_MISSING:-0}" = "1" ]; then
+        printf '\n# Deploy gate: sxema kelgach `on` qiling\nPOS_HEALTH_GATE=off\n' >> "$ENV_FILE"
+    else
+        printf '\n# Deploy gate\nPOS_HEALTH_GATE=on\n' >> "$ENV_FILE"
+    fi
+fi
 
 cat <<DONE
 
@@ -217,6 +243,7 @@ Tayyor.
 
   Konteyner   http://127.0.0.1:8090/api/pos/v1/health
   Ommaviy     https://$DOMAIN/api/pos/v1/health
+  Deploy gate POS_HEALTH_GATE=$(grep '^POS_HEALTH_GATE=' "$ENV_FILE" | cut -d= -f2)
 
 Keyingi qadam — CI uchun kalit:
   ssh-keygen -t ed25519 -f ~/.ssh/pos_deploy -N ''

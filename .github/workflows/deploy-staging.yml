@@ -105,7 +105,28 @@ jobs:
             - name: Verify over HTTPS
               env:
                   BASE: ${{ secrets.POS_PUBLIC_URL }}
+                  HOST: ${{ secrets.POS_SSH_HOST }}
+                  USER_NAME: ${{ secrets.POS_SSH_USER }}
               run: |
                   code=$(curl -sS -o /tmp/health.json -w '%{http_code}' -m 20 "$BASE/api/pos/v1/health")
                   echo "HTTP $code"; cat /tmp/health.json; echo
-                  [ "$code" = "200" ]
+
+                  # The same switch the deploy script obeys, read from the box
+                  # rather than duplicated here — one place to turn the gate on.
+                  gate=$(ssh "$USER_NAME@$HOST" \
+                      "grep '^POS_HEALTH_GATE=' /var/www/pos/pdaftar_pos/pos_backend/.env | cut -d= -f2-" \
+                      | tr -d "\"' \r")
+                  echo "POS_HEALTH_GATE=$gate"
+
+                  if [ "$gate" = "off" ]; then
+                      # 503 is the POS reporting its own broken link, which is
+                      # the known state while the database is undecided. It is
+                      # still proof the vhost, TLS and proxy all work. Anything
+                      # else — 502, 404, 000 — is the pipeline being wrong.
+                      case "$code" in
+                          200|503) echo "OK (gate off)" ;;
+                          *) echo "Kutilmagan javob"; exit 1 ;;
+                      esac
+                  else
+                      [ "$code" = "200" ]
+                  fi

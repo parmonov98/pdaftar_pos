@@ -97,8 +97,20 @@ fi
 # POS is wired to the wrong database or queueing into a namespace nobody reads,
 # and every one of those failures is silent: a missing observer writes the sale
 # and never moves the cash to Kassa.
+#
+# POS_HEALTH_GATE in pos_backend/.env decides whether it stops the release.
+# `on` is the default and the only setting a POS taking real sales may have.
+# `off` exists for the window before the database question is answered: with
+# no pDaftar schema the checks cannot pass, and a pipeline that is red for a
+# known reason teaches everyone to ignore red.
 step "Yakuniy tekshiruv: pos:health"
-if ! docker compose exec -T php-pos php artisan pos:health; then
+gate="$(grep '^POS_HEALTH_GATE=' "$ROOT/pos_backend/.env" | cut -d= -f2- | tr -d "\"' " || true)"
+if docker compose exec -T php-pos php artisan pos:health; then
+    :
+elif [ "$gate" = "off" ]; then
+    printf '\n\033[33mpos:health xato qaytardi. POS_HEALTH_GATE=off — deploy toxtatilmadi.\033[0m\n'
+    printf 'Bu vaqtinchalik: sxema/baza hal bolgach .env da `on` qiling.\n'
+else
     die "pos:health xato qaytardi. Yuqoridagi XATO qatorlarini tuzatmaguncha
 POSni trafikka qoymang."
 fi
