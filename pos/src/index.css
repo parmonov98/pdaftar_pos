@@ -609,10 +609,21 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
     grid-template-columns: 1fr 1fr auto;
     grid-template-areas:
       "name  name  del"
-      "qty   price sum";
+      "qty   qty   qty"
+      "price price sum";
     row-gap: 10px;
     align-items: center;
   }
+
+  /* Quantity gets the whole width. It holds four controls — minus, the
+     number, plus and the unit — and sharing a line with the price left the
+     number 28px wide and the unit picker a bare chevron with its label
+     clipped off. On a multi-unit product that chevron is the difference
+     between selling a bottle and selling a box. */
+  .cart-row .cell.c:first-of-type { justify-content: stretch; }
+  .cart-row .cell.c:first-of-type .stepper { width: 100%; }
+  .cart-row .cell.c:first-of-type .stepper input { flex: 1 1 auto; }
+  .cart-row .cell.c:first-of-type .unit-select { flex: 0 0 auto; width: auto; }
 
   /* Positional rather than semantic because both steppers carry the same
      class: 2 is quantity, 3 is price, 4 the line total, 5 the remove button.
