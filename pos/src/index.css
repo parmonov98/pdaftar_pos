@@ -560,3 +560,14 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .hist-row .hist-main { flex: 1; }
 .hist-print { align-self: center; margin-right: 10px; font-size: 16px; padding: 6px 10px; }
 .hist-items { flex-basis: 100%; }
+
+/* A button that reads as a link: used to move between signing in and
+   registering. A real <button> rather than an <a href="#">, so it is
+   keyboard-reachable and announces itself as an action, not a destination. */
+.linklike {
+  background: none; border: none; padding: 0;
+  font: inherit; color: var(--accent, #4f6ef7);
+  cursor: pointer; text-decoration: underline;
+}
+.linklike:hover { opacity: 0.85; }
+.linklike:focus-visible { outline: 2px solid var(--accent, #4f6ef7); outline-offset: 2px; border-radius: 3px; }

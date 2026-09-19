@@ -14,7 +14,6 @@ export const TERMINAL_TOKEN_KEY = 'pos.terminal_token'
 export const DEVICE_ID_KEY = 'pos.device_id'
 
 const POS_BASE = '/api/pos/v1'
-const MOBILE_BASE = '/api/mobile'
 
 export class ApiError extends Error {
   // Declared as fields rather than constructor parameter properties: the
@@ -131,28 +130,80 @@ export function normalizePhone(input: string): string {
   return `+${digits}`
 }
 
-export async function login(phone: string, password: string): Promise<string> {
-  const res = await request<{ data?: { token?: string }; token?: string }>(`${MOBILE_BASE}/login`, {
+export type AuthResult = {
+  token: string
+  user: { id: number; name: string; phone_number: string; linked_to_pdaftar: boolean }
+  shops: ShopSummary[]
+}
+
+/**
+ * Sign in to the POS.
+ *
+ * This used to post to pDaftar's /api/mobile/login. That only worked while the
+ * till was served from the same origin as pDaftar's API; the POS now runs on
+ * its own server with its own database, where that route does not exist and a
+ * pDaftar token could not be validated anyway.
+ *
+ * The response carries the shops too, so the shop step no longer costs a second
+ * round trip — which matters on a till opening at 8am on shop wifi.
+ */
+export async function login(phone: string, password: string): Promise<AuthResult> {
+  const res = await request<{ data: AuthResult }>(`${POS_BASE}/auth/login`, {
     method: 'POST',
     body: JSON.stringify({
       phone_number: normalizePhone(phone),
       password,
-      // The mobile login demands one. A till has no push channel, so it
-      // identifies itself rather than sending a fake device token.
-      fcm_token: 'pos-web',
     }),
   })
 
-  const token = res.data?.token ?? res.token
-  if (!token) throw new ApiError('Token qaytmadi', 500, res)
-  return token
+  if (!res.data?.token) throw new ApiError('Token qaytmadi', 500, res)
+  return res.data
+}
+
+/**
+ * Create an account and its first shop.
+ *
+ * The POS is its own product: someone who has never heard of pDaftar can open
+ * a till with it. Registering returns a signed-in session, because making
+ * someone register and then immediately log in with what they just typed is a
+ * step that exists only for the server's convenience.
+ */
+export async function register(input: {
+  name: string
+  phone: string
+  password: string
+  shopName: string
+}): Promise<AuthResult> {
+  const res = await request<{ data: AuthResult }>(`${POS_BASE}/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: input.name.trim(),
+      phone_number: normalizePhone(input.phone),
+      password: input.password,
+      shop_name: input.shopName.trim(),
+    }),
+  })
+
+  if (!res.data?.token) throw new ApiError('Token qaytmadi', 500, res)
+  return res.data
+}
+
+/**
+ * Re-read the signed-in USER's session.
+ *
+ * Named apart from fetchMe() below, which answers for the TERMINAL: two
+ * different subjects, and conflating them is how a seller's shop list ends up
+ * scoped to one till.
+ */
+export async function fetchAccount(userToken: string): Promise<AuthResult> {
+  const res = await request<{ data: Omit<AuthResult, 'token'> }>(`${POS_BASE}/auth/me`, {
+    token: userToken,
+  })
+  return { token: userToken, ...res.data }
 }
 
 export async function fetchShops(userToken: string): Promise<ShopSummary[]> {
-  const res = await request<{ data?: ShopSummary[] }>(`${MOBILE_BASE}/shops/user-shops`, {
-    token: userToken,
-  })
-  return res.data ?? []
+  return (await fetchAccount(userToken)).shops
 }
 
 export type TerminalSummary = {

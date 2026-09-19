@@ -44,6 +44,12 @@ class AuthController extends Controller {
             'phone_number' => ['required', 'string', 'max:20'],
             'password' => ['required', 'string', 'min:6', 'max:72'],
             'shop_name' => ['required', 'string', 'max:160'],
+        ], [
+            'name.required' => 'Ismingizni kiriting.',
+            'phone_number.required' => 'Telefon raqamni kiriting.',
+            'password.required' => 'Parol kiriting.',
+            'password.min' => 'Parol kamida 6 ta belgidan iborat bo\'lsin.',
+            'shop_name.required' => 'Do\'kon nomini kiriting.',
         ]);
 
         $phone = User::normalisePhone($data['phone_number']);
@@ -78,7 +84,11 @@ class AuthController extends Controller {
                 'role' => UserShop::ROLE_OWNER,
             ]);
 
-            return [$user, $shop];
+            // Reloaded because the response reports terminal_limit, and that
+            // value is a database default the freshly-created instance has
+            // never seen. Without this the till is told the limit is null and
+            // shows a shop that may open no tills at all.
+            return [$user, $shop->refresh()];
         });
 
         [$user, $shop] = $result;
@@ -103,6 +113,9 @@ class AuthController extends Controller {
         $data = $request->validate([
             'phone_number' => ['required', 'string', 'max:20'],
             'password' => ['required', 'string'],
+        ], [
+            'phone_number.required' => 'Telefon raqamni kiriting.',
+            'password.required' => 'Parol kiriting.',
         ]);
 
         $phone = User::normalisePhone($data['phone_number']);

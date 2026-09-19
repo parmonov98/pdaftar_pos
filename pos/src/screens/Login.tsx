@@ -1,24 +1,29 @@
 import { useMemo, useState } from 'react'
 import {
-  fetchShops,
   login,
   normalizePhone,
+  register,
   registerTerminal,
   setTerminalToken,
+  type AuthResult,
   type ShopSummary,
 } from '../api'
 
 const LAST_PHONE_KEY = 'pos.last_phone'
 
-type Step = 'credentials' | 'shop'
+type Step = 'credentials' | 'register' | 'shop'
 
 /**
  * Signing in is signing in — nothing is created here.
  *
- * pDaftar's access model is already per-person: a shop invites sellers, each has
- * their own phone and password, and any of them can open the business. The POS
- * inherits that exactly. Anvar types his number and sells; Sobir types his and
- * sells. There is no till to register, no device to name, and no quota to hit.
+ * The POS owns its accounts. It used to sign in against pDaftar's mobile API,
+ * which worked only while the till was served from pDaftar's own origin — on
+ * its own domain and database that route does not exist. So a shop that has
+ * never heard of pDaftar can register here and start selling.
+ *
+ * Access stays per-person: each seller has their own number and password, and
+ * any of them can open the business. There is no till to name and no quota to
+ * hit.
  *
  * The device handshake still happens — it is what scopes offline operation ids
  * and attributes a sale to the machine — but it runs silently right after login
@@ -40,6 +45,11 @@ export function Login({ onReady }: { onReady: () => void }) {
   const [shops, setShops] = useState<ShopSummary[]>([])
   const [shopFilter, setShopFilter] = useState('')
 
+  // Registration only. Kept separate from the login fields so switching
+  // between the two never carries a half-typed value across.
+  const [regName, setRegName] = useState('')
+  const [regShopName, setRegShopName] = useState('')
+
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,32 +69,39 @@ export function Login({ onReady }: { onReady: () => void }) {
     onReady()
   }
 
+  /**
+   * What happens after either login or registration succeeds.
+   *
+   * One path, so a freshly registered owner and a returning seller cannot end
+   * up in different states — the new owner has exactly one shop and should go
+   * straight to selling, which is the same rule as any other single-shop user.
+   */
+  async function afterAuth(auth: AuthResult) {
+    localStorage.setItem(LAST_PHONE_KEY, normalizePhone(phone))
+
+    if (auth.shops.length === 0) {
+      setError("Bu hisobda do'kon yo'q. Do'kon egasidan sizni qo'shishini so'rang.")
+      return
+    }
+
+    // One shop is not a choice, so it is not shown as one.
+    if (auth.shops.length === 1) {
+      await connect(auth.token, auth.shops[0].id)
+      return
+    }
+
+    setUserToken(auth.token)
+    setShops(auth.shops)
+    setStep('shop')
+  }
+
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
 
     try {
-      const token = await login(phone, password)
-      const list = await fetchShops(token)
-
-      if (list.length === 0) {
-        setError("Bu hisobda do'kon yo'q. Do'kon egasidan sizni qo'shishini so'rang.")
-        return
-      }
-
-      localStorage.setItem(LAST_PHONE_KEY, normalized)
-
-      // One shop is not a choice, so it is not shown as one. A seller in a
-      // single shop goes from password straight to the sale screen.
-      if (list.length === 1) {
-        await connect(token, list[0].id)
-        return
-      }
-
-      setUserToken(token)
-      setShops(list)
-      setStep('shop')
+      await afterAuth(await login(phone, password))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Kirishda xatolik')
     } finally {
@@ -92,9 +109,25 @@ export function Login({ onReady }: { onReady: () => void }) {
     }
   }
 
-  async function pickShop(shopId: number) {
-    if (!userToken) return
+  async function handleRegister(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
 
+    try {
+      await afterAuth(
+        await register({ name: regName, phone, password, shopName: regShopName }),
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ro'yxatdan o'tishda xatolik")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** The shop step's choice: open a till in the shop they picked. */
+  async function pickShop(shopId: number) {
+    if (userToken === null) return
     setBusy(true)
     setError(null)
 
@@ -120,9 +153,9 @@ export function Login({ onReady }: { onReady: () => void }) {
       <div className="login">
         <h1>pDaftar POS</h1>
         <p className="sub">
-          {step === 'credentials'
-            ? 'Telefon raqamingiz va parolingiz bilan kiring'
-            : "Qaysi do'konda sotasiz?"}
+          {step === 'credentials' && 'Telefon raqamingiz va parolingiz bilan kiring'}
+          {step === 'register' && "Yangi hisob va do'kon yarating"}
+          {step === 'shop' && "Qaysi do'konda sotasiz?"}
         </p>
 
         {error && <div className="notice err">{error}</div>}
@@ -178,8 +211,117 @@ export function Login({ onReady }: { onReady: () => void }) {
             </button>
 
             <p className="hint" style={{ marginTop: 14, textAlign: 'center' }}>
-              pDaftardagi hisobingiz bilan kiriladi. Do'konga qo'shilgan har bir
-              sotuvchi o'z raqami bilan kira oladi.
+              Do'konga qo'shilgan har bir sotuvchi o'z raqami bilan kira oladi.
+            </p>
+
+            <p className="hint" style={{ marginTop: 10, textAlign: 'center' }}>
+              Hisobingiz yo'qmi?{' '}
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  setStep('register')
+                  setError(null)
+                  setPassword('')
+                }}
+              >
+                Ro'yxatdan o'ting
+              </button>
+            </p>
+          </form>
+        ) : step === 'register' ? (
+          <form onSubmit={handleRegister}>
+            <div className="field">
+              <label htmlFor="rname">Ismingiz</label>
+              <input
+                id="rname"
+                autoFocus
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+                placeholder="Anvar"
+                autoComplete="name"
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="rshop">Do'kon nomi</label>
+              <input
+                id="rshop"
+                value={regShopName}
+                onChange={(e) => setRegShopName(e.target.value)}
+                placeholder="Anvar Market"
+                autoComplete="organization"
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="rphone">Telefon raqam</label>
+              <input
+                id="rphone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+                inputMode="tel"
+                autoComplete="username"
+              />
+              {phone.trim() !== '' && phone.trim() !== '+998' && (
+                <div className="hint">
+                  Yuboriladi: <code>{normalized || '—'}</code>
+                  {!phoneLooksValid && " · raqam to'liq emas"}
+                </div>
+              )}
+            </div>
+
+            <div className="field">
+              <label htmlFor="rpw">Parol</label>
+              <div className="input-affix">
+                <input
+                  id="rpw"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="affix"
+                  onClick={() => setShowPassword((v) => !v)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? 'Yashirish' : "Ko'rsatish"}
+                </button>
+              </div>
+              {/* Stated before they submit, not as a rejection afterwards. */}
+              <div className="hint">Kamida 6 ta belgi.</div>
+            </div>
+
+            <button
+              className="primary"
+              style={{ width: '100%' }}
+              disabled={
+                busy ||
+                !phoneLooksValid ||
+                password.length < 6 ||
+                regName.trim() === '' ||
+                regShopName.trim() === ''
+              }
+            >
+              {busy ? "Yaratilmoqda…" : "Ro'yxatdan o'tish"}
+            </button>
+
+            <p className="hint" style={{ marginTop: 14, textAlign: 'center' }}>
+              Hisobingiz bormi?{' '}
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  setStep('credentials')
+                  setError(null)
+                  setPassword('')
+                }}
+              >
+                Kirish
+              </button>
             </p>
           </form>
         ) : (

@@ -82,6 +82,18 @@ docker compose exec -T php-pos php artisan migrate --force
 docker compose exec -T php-pos php artisan config:cache
 docker compose exec -T php-pos php artisan route:cache
 
+# Restart, or the deploy is a lie.
+#
+# php-fpm holds compiled bytecode and the compiled route cache for the life of
+# the process. Without this, `artisan route:list` inside the container shows
+# the new routes while HTTP still answers 404 from the old ones — a deploy
+# that reports success and changes nothing a client can see. Found exactly
+# that way: the first auth deploy went green and every new endpoint 404'd.
+docker compose restart php-pos
+# Give php-fpm a moment to accept connections again before the health check
+# below decides the release is broken.
+sleep 3
+
 # ── Kassa ──────────────────────────────────────────────────────────────────
 # Not built here. CI rsynced it; this only checks that it actually arrived,
 # because an empty dist/ serves a blank page with a 200 and no log line.
