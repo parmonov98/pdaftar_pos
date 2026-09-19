@@ -92,6 +92,11 @@ export function ProductForm({
       barcode: barcode.trim() === '' ? null : barcode.trim(),
       price: Number(price),
       unit_id: unitId,
+      // What the price above is denominated in. It was being left off, so
+      // every product the till created stored a price with no currency
+      // beside it — and the server's own pricing then refused to use that
+      // column, because it checks the two match.
+      currency_id: currencyId,
       low_stock_threshold: threshold.trim() === '' ? null : Number(threshold),
     }
 

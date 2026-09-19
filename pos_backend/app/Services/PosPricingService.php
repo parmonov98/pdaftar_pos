@@ -112,7 +112,25 @@ class PosPricingService {
         // twelve, so this deliberately does NOT scale by the conversion.
         $isBase = (int) $unit->base_units_numerator === 1 && (int) $unit->base_units_denominator === 1;
 
-        if ($isBase && $product->currency_id === $currencyId) {
+        // A null currency on the product means the shop's own, not "any".
+        //
+        // Rows written before the till sent a currency hold a price with
+        // nothing beside it, and that number was typed in the only currency
+        // the shop had. Treating it as a mismatch leaves the product
+        // unpriceable while the till, which has no such check, shows the
+        // price and puts it in the basket — the two disagree about the same
+        // product and the sale is refused for a reason nobody can see.
+        //
+        // Resolved against the shop rather than accepted for anything, so a
+        // som price is never handed back as dollars. A shop with no currency
+        // of its own leaves such a product unpriceable, which is correct:
+        // there is nothing on record saying what the number means, and
+        // guessing is how a som is sold for a dollar.
+        $sameCurrency = $product->currency_id === null
+            ? $product->shop?->currency_id === $currencyId
+            : $product->currency_id === $currencyId;
+
+        if ($isBase && $sameCurrency) {
             return $product->price === null ? null : (float) $product->price;
         }
 

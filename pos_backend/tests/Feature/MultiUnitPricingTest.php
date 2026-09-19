@@ -62,6 +62,11 @@ class MultiUnitPricingTest extends TestCase {
         $this->uzs = Currency::create(['code' => 'UZS', 'name' => "So'm", 'sign' => "so'm"]);
         $this->usd = Currency::create(['code' => 'USD', 'name' => 'Dollar', 'sign' => '$']);
 
+        // Registration gives every shop its currency, so a shop without one
+        // is not a case production produces. Set here so the tests below
+        // exercise the same resolution path a real shop does.
+        $this->shop->forceFill(['currency_id' => $this->uzs->id])->save();
+
         $this->cola = Product::create([
             'shop_id' => $this->shop->id,
             'name' => 'Cola 1.5L',
@@ -320,6 +325,29 @@ class MultiUnitPricingTest extends TestCase {
 
         $base = $pricing->baseUnit($this->cola);
         $this->assertSame(12000.0, $pricing->priceFor($this->cola, $base, $this->uzs->id));
+    }
+
+    /**
+     * A product with no currency recorded still has a usable price.
+     *
+     * The till left currency_id off every product it created, so the column
+     * holds a number with nothing beside it. Read as a mismatch, the server
+     * calls the product unpriceable while the till — which has no such check
+     * — shows the price on screen and puts it in the basket. The two then
+     * disagree about the same product, and the sale is refused at the
+     * counter for a reason nobody can see.
+     */
+    public function test_a_product_with_no_currency_is_priced_in_the_shops_own(): void {
+        $this->cola->forceFill(['currency_id' => null])->save();
+
+        $pricing = app(PosPricingService::class);
+        $base = $pricing->baseUnit($this->cola->refresh());
+
+        $this->assertSame(12000.0, $pricing->priceFor($this->cola, $base, $this->uzs->id));
+
+        // The shop's own, not "whatever you ask for" — a som price handed
+        // back as dollars would be a 12,000x error.
+        $this->assertNull($pricing->priceFor($this->cola, $base, $this->usd->id));
     }
 
     /** Nor in a currency it was never quoted in. */
