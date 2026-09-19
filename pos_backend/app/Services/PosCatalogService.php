@@ -72,8 +72,10 @@ class PosCatalogService {
                         'id' => $c->id,
                         'name' => $c->name,
                         'phone_number' => $c->phone_number,
-                        // Computed, not stored — see Client::balance().
-                        'balance' => $c->balance(),
+                        // Computed, not stored — see Client::balances().
+                        // A map, because a client can owe in more than one
+                        // currency and those debts do not add up.
+                        'balances' => $c->balances(),
                         'deleted' => $c->deleted_at !== null,
                         'updated_at' => $c->updated_at?->toIso8601String(),
                     ],

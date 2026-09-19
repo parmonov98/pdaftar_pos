@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { fetchRecentSales, type MeResponse, type RecentSale } from '../api'
+import { db, type Currency } from '../db'
 import { formatMoney } from '../sales'
 import { receiptFromHistory, type Receipt } from '../receipt'
 import { ReceiptView } from './Receipt'
@@ -36,9 +38,25 @@ export function History({ me }: { me: MeResponse }) {
     void load()
   }, [load])
 
-  const dayTotal = sales
+  const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as Currency[])
+
+  const code = (id: number | null) =>
+    id === null ? '' : (currencies.find((c) => c.id === id)?.code ?? '')
+
+  /**
+   * Today's takings, per currency.
+   *
+   * Summed across currencies this was nonsense arithmetic — 12,000 som and
+   * 11 dollars reported as 12,011, with no unit written anywhere to give the
+   * number away. A shop that sells in two currencies would have read its own
+   * day wrong every time it looked.
+   */
+  const dayTotals = sales
     .filter((s) => !s.is_cancelled && isToday(s.created_at))
-    .reduce((sum, s) => sum + s.total, 0)
+    .reduce<Map<number | null, number>>((acc, s) => {
+      acc.set(s.currency_id, (acc.get(s.currency_id) ?? 0) + s.total)
+      return acc
+    }, new Map())
 
   return (
     <div className="view">
@@ -70,7 +88,13 @@ export function History({ me }: { me: MeResponse }) {
 
       {!error && sales.length > 0 && (
         <div className="view-summary">
-          Bugungi savdo: <strong>{formatMoney(dayTotal)}</strong>
+          Bugungi savdo:{' '}
+          {[...dayTotals.entries()].map(([currencyId, sum], index) => (
+            <strong key={currencyId ?? 'none'}>
+              {index > 0 && ' · '}
+              {formatMoney(sum)} {code(currencyId)}
+            </strong>
+          ))}
           <span className="muted"> · oxirgi {sales.length} ta sotuv ko'rsatilgan</span>
         </div>
       )}
@@ -108,7 +132,12 @@ export function History({ me }: { me: MeResponse }) {
                   {sale.discount_amount > 0 && ` · chegirma ${formatMoney(sale.discount_amount)}`}
                 </span>
               </span>
-              <span className="amt">{formatMoney(sale.total)}</span>
+              {/* With the currency, always. Two rows reading "11" and
+                  "12,000" are the same size on screen and are not remotely
+                  the same amount of money. */}
+              <span className="amt">
+                {formatMoney(sale.total)} {code(sale.currency_id)}
+              </span>
             </button>
 
             {/* Reprint. Works for another seller's sale too — the lines come

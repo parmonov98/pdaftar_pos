@@ -283,6 +283,11 @@ class PosOperationDispatcher {
             'client_id' => $client->id,
             'sale_id' => $payload['sale_id'] ?? null,
             'amount' => $amount,
+            // Which debt this settles. A bare number cannot be subtracted
+            // from anything: eleven dollars would cancel eleven som. Falls
+            // back to the shop's own currency, which is what a till that
+            // never asks the question is handing over.
+            'currency_id' => $payload['currency_id'] ?? $terminal->shop?->currency_id,
             'payment_type' => $payload['payment_type'] ?? null,
             'note' => $payload['note'] ?? null,
             'user_id' => $userId,

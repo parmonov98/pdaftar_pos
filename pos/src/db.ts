@@ -63,7 +63,13 @@ export type Client = {
   phone_number: string | null
   address: string | null
   /** What they owe. Computed by the server from sales and payments. */
-  balance?: number
+  /**
+   * What they owe, keyed by currency id. Positive is a debt, negative is
+   * credit with the shop. A map rather than a number because two currencies
+   * are two debts — adding eleven dollars to twelve thousand som produces a
+   * figure that is not money.
+   */
+  balances?: Record<number, number>
   deleted?: boolean
   updated_at: string | null
 }

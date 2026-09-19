@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addLine, priceFor } from './drafts'
-import { cartSubtotal, lineTotal, type CartLine } from './sales'
+import { cartSubtotal, lineTotal, owedIn, type CartLine } from './sales'
 import type { Product, ProductUnitOption } from './db'
 
 /**
@@ -121,5 +121,28 @@ describe('cart totals', () => {
     // Weighed goods: 0.1 kg three times must not land on 30000.000000004.
     const grams = line({ quantity: 0.1, price: 100000 })
     expect(cartSubtotal([grams, grams, grams])).toBe(30000)
+  })
+})
+
+describe('owedIn', () => {
+  it('keeps currencies apart, largest debt first', () => {
+    // Merged into one number these read as 12,011 — a figure that is not
+    // money, and the reason the balance is a map at all.
+    expect(owedIn({ 1: 12000, 2: 11 })).toEqual([
+      [1, 12000],
+      [2, 11],
+    ])
+  })
+
+  it('drops settled currencies', () => {
+    expect(owedIn({ 1: 0, 2: 11 })).toEqual([[2, 11]])
+  })
+
+  it('keeps credit, which is a debt the other way round', () => {
+    expect(owedIn({ 1: -8000 })).toEqual([[1, -8000]])
+  })
+
+  it('treats a missing map as nothing owed', () => {
+    expect(owedIn(undefined)).toEqual([])
   })
 })

@@ -462,6 +462,8 @@ export function createClient(input: {
 export function payClientDebt(input: {
   client_id: number
   amount: number
+  /** Which currency's debt this settles. Omitted = the shop's own. */
+  currency_id?: number | null
   payment_type?: string | null
   note?: string | null
   sale_id?: number | null

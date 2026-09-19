@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { payClientDebt } from '../api'
-import type { Client } from '../db'
-import { formatMoney } from '../sales'
+import { db, type Client, type Currency } from '../db'
+import { formatMoney, owedIn } from '../sales'
 import { pullAll } from '../sync'
 
 /**
@@ -23,9 +24,17 @@ export function DebtPayment({
   client: Client
   onClose: () => void
 }) {
-  const owed = client.balance ?? 0
+  const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as Currency[])
 
-  const [amount, setAmount] = useState(owed > 0 ? String(owed) : '')
+  // Largest debt first, so the default is the one they came in to settle.
+  const debts = owedIn(client.balances)
+
+  const [currencyId, setCurrencyId] = useState<number | null>(debts[0]?.[0] ?? null)
+
+  const owed = currencyId === null ? 0 : (client.balances?.[currencyId] ?? 0)
+  const code = currencies.find((c) => c.id === currencyId)?.code ?? ''
+
+  const [amount, setAmount] = useState(debts[0] && debts[0][1] > 0 ? String(debts[0][1]) : '')
   const [type, setType] = useState('cash')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -44,6 +53,10 @@ export function DebtPayment({
       await payClientDebt({
         client_id: client.id,
         amount: value,
+        // Which debt this settles. Without it the server would subtract the
+        // number from the shop's own currency, and a dollar handed over
+        // would clear a som.
+        currency_id: currencyId,
         payment_type: type,
         note: note.trim() === '' ? null : note.trim(),
       })
@@ -67,9 +80,36 @@ export function DebtPayment({
           </div>
           <div className="row grand">
             <span>{owed >= 0 ? 'Qarzi' : 'Haqdor'}</span>
-            <span>{formatMoney(Math.abs(owed))}</span>
+            <span>
+              {formatMoney(Math.abs(owed))} {code}
+            </span>
           </div>
         </div>
+
+        {/* Shown only when there is a choice to make. One debt needs no
+            picker; two do, and paying the wrong one is invisible until
+            somebody reconciles the books. */}
+        {debts.length > 1 && (
+          <div className="field">
+            <label>Qaysi qarz</label>
+            <div className="seg">
+              {debts.map(([id, value_]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={currencyId === id ? 'on' : ''}
+                  onClick={() => {
+                    setCurrencyId(id)
+                    setAmount(value_ > 0 ? String(value_) : '')
+                  }}
+                >
+                  {formatMoney(Math.abs(value_))}{' '}
+                  {currencies.find((c) => c.id === id)?.code ?? ''}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {!online && (
           <div className="notice err">
@@ -93,7 +133,7 @@ export function DebtPayment({
                 ordinary — they are settling and leaving a little on account. */}
             {over && (
               <div className="hint">
-                Qarzdan {formatMoney(value - owed)} ko'p — farqi haqdorlik bo'lib qoladi.
+                Qarzdan {formatMoney(value - owed)} {code} ko'p — farqi haqdorlik bo'lib qoladi.
               </div>
             )}
           </div>
@@ -129,7 +169,7 @@ export function DebtPayment({
               Bekor qilish
             </button>
             <button className="primary" disabled={busy || !online || value <= 0}>
-              {busy ? 'Yozilmoqda…' : `Qabul qilish: ${formatMoney(value)}`}
+              {busy ? 'Yozilmoqda…' : `Qabul qilish: ${formatMoney(value)} ${code}`}
             </button>
           </div>
         </form>

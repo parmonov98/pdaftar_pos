@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type Client, type Product } from '../db'
-import { formatMoney, WALK_IN_NAME } from '../sales'
+import { db, type Client, type Currency, type Product } from '../db'
+import { formatMoney, owedIn, WALK_IN_NAME } from '../sales'
 import { DebtPayment } from './DebtPayment'
 import { ProductForm } from './ProductForm'
 
@@ -134,6 +134,9 @@ export function Clients() {
   const [paying, setPaying] = useState<Client | null>(null)
 
   const clients = useLiveQuery(() => db.clients.toArray(), [], [] as Client[])
+  const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as Currency[])
+
+  const code = (id: number) => currencies.find((c) => c.id === id)?.code ?? ''
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -165,14 +168,30 @@ export function Clients() {
       <div className="view-summary">
         {rows.length} ta mijoz
         {(() => {
-          // The number the owner actually opens this screen for.
-          const owed = rows.reduce((sum, c) => sum + Math.max(0, c.balance ?? 0), 0)
-          const debtors = rows.filter((c) => (c.balance ?? 0) > 0).length
-          return owed > 0 ? (
+          // The number the owner actually opens this screen for — one per
+          // currency. Totalled across them it would be a figure that is not
+          // money, printed in the place they trust most.
+          const totals = new Map<number, number>()
+          let debtors = 0
+
+          for (const client of rows) {
+            const debts = owedIn(client.balances).filter(([, amount]) => amount > 0)
+            if (debts.length > 0) debtors++
+            for (const [currencyId, amount] of debts) {
+              totals.set(currencyId, (totals.get(currencyId) ?? 0) + amount)
+            }
+          }
+
+          if (totals.size === 0) return null
+
+          return (
             <span style={{ color: 'var(--danger-text)' }}>
-              {' '}· {debtors} ta qarzdor, jami {formatMoney(owed)}
+              {' '}· {debtors} ta qarzdor, jami{' '}
+              {[...totals.entries()]
+                .map(([currencyId, sum]) => `${formatMoney(sum)} ${code(currencyId)}`)
+                .join(' · ')}
             </span>
-          ) : null
+          )
         })()}
       </div>
 
@@ -198,13 +217,13 @@ export function Clients() {
               <span className="nm">{client.name}</span>
               <span className="sub">{client.phone_number ?? "Telefon yo'q"}</span>
             </span>
-            {typeof client.balance === 'number' && client.balance !== 0 && (
-              <span className={`tag ${client.balance > 0 ? 'debt' : 'credit'}`}>
-                {client.balance > 0
-                  ? `${formatMoney(client.balance)} qarz`
-                  : `${formatMoney(-client.balance)} haqdor`}
+            {owedIn(client.balances).map(([currencyId, amount]) => (
+              <span key={currencyId} className={`tag ${amount > 0 ? 'debt' : 'credit'}`}>
+                {amount > 0
+                  ? `${formatMoney(amount)} ${code(currencyId)} qarz`
+                  : `${formatMoney(-amount)} ${code(currencyId)} haqdor`}
               </span>
-            )}
+            ))}
           </div>
         ))}
       </div>

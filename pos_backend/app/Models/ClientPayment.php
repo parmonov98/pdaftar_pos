@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** Money handed back against a debt. One row per act of paying. */
 class ClientPayment extends Model {
     protected $fillable = [
-        'shop_id', 'client_id', 'sale_id', 'amount',
+        'shop_id', 'client_id', 'sale_id', 'amount', 'currency_id',
         'payment_type', 'note', 'user_id', 'pos_terminal_id', 'occurred_at',
     ];
 

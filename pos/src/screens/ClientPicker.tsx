@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { createClient } from '../api'
-import { db, type Client } from '../db'
-import { formatMoney, WALK_IN_NAME } from '../sales'
+import { db, type Client, type Currency } from '../db'
+import { formatMoney, owedIn, WALK_IN_NAME } from '../sales'
 import { pullAll } from '../sync'
 
 /**
@@ -33,6 +33,9 @@ export function ClientPicker({
   const online = navigator.onLine
 
   const clients = useLiveQuery(() => db.clients.toArray(), [], [] as Client[])
+  const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as Currency[])
+
+  const code = (id: number) => currencies.find((c) => c.id === id)?.code ?? ''
 
   const matches = useMemo(() => {
     const alive = clients.filter((c) => !c.deleted && c.name !== WALK_IN_NAME)
@@ -189,13 +192,15 @@ export function ClientPicker({
                 <span className="nm">{client.name}</span>
                 {client.phone_number && <span className="sub">{client.phone_number}</span>}
               </span>
-              {typeof client.balance === 'number' && client.balance !== 0 && (
-                <span className={`tag ${client.balance > 0 ? 'debt' : 'credit'}`}>
-                  {client.balance > 0
-                    ? `${formatMoney(client.balance)} qarz`
-                    : `${formatMoney(-client.balance)} haqdor`}
+              {/* One badge per currency. A single merged figure would be
+                  arithmetic across currencies, which is not money. */}
+              {owedIn(client.balances).map(([currencyId, amount]) => (
+                <span key={currencyId} className={`tag ${amount > 0 ? 'debt' : 'credit'}`}>
+                  {amount > 0
+                    ? `${formatMoney(amount)} ${code(currencyId)} qarz`
+                    : `${formatMoney(-amount)} ${code(currencyId)} haqdor`}
                 </span>
-              )}
+              ))}
             </button>
           ))}
 

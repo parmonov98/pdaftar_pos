@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Pos\Exceptions\BusinessException;
 use Pos\Models\Client;
 use Pos\Models\ClientPayment;
+use Pos\Models\Currency;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
 use Pos\Models\Sale;
@@ -39,6 +40,10 @@ class ClientDebtTest extends TestCase {
 
     private Product $cola;
 
+    private Currency $uzs;
+
+    private Currency $usd;
+
     protected function setUp(): void {
         parent::setUp();
 
@@ -51,6 +56,10 @@ class ClientDebtTest extends TestCase {
         UserShop::create(['user_id' => $this->user->id, 'shop_id' => $this->shop->id, 'role' => UserShop::ROLE_OWNER]);
 
         $unit = Unit::create(['shop_id' => $this->shop->id, 'name' => 'dona', 'is_default' => true]);
+
+        $this->uzs = Currency::create(['code' => 'UZS', 'name' => "So'm", 'sign' => "so'm"]);
+        $this->usd = Currency::create(['code' => 'USD', 'name' => 'Dollar', 'sign' => '$']);
+        $this->shop->forceFill(['currency_id' => $this->uzs->id])->save();
 
         $this->cola = Product::create([
             'shop_id' => $this->shop->id,
@@ -71,13 +80,14 @@ class ClientDebtTest extends TestCase {
         );
     }
 
-    private function sell(float $qty, float $price, float $paid, ?int $clientId): Sale {
+    private function sell(float $qty, float $price, float $paid, ?int $clientId, ?int $currencyId = null): Sale {
         return app(PosSaleService::class)->create(
             $this->terminal(),
             [
                 'items' => [['product_id' => $this->cola->id, 'quantity' => $qty, 'price' => $price]],
                 'paid_amount' => $paid,
                 'client_id' => $clientId,
+                'currency_id' => $currencyId ?? $this->uzs->id,
             ],
             null,
             $this->user->id,
@@ -110,13 +120,13 @@ class ClientDebtTest extends TestCase {
 
         $this->assertSame($this->client->id, $sale->client_id);
         $this->assertSame(24000.0, $sale->outstanding());
-        $this->assertSame(24000.0, $this->client->balance());
+        $this->assertSame(24000.0, $this->client->balanceIn($this->uzs->id));
     }
 
     public function test_a_part_payment_at_the_till_leaves_the_rest_owing(): void {
         $this->sell(2, 12000, 10000, $this->client->id);
 
-        $this->assertSame(14000.0, $this->client->balance());
+        $this->assertSame(14000.0, $this->client->balanceIn($this->uzs->id));
     }
 
     public function test_paying_the_debt_back_clears_the_balance(): void {
@@ -126,12 +136,13 @@ class ClientDebtTest extends TestCase {
             'shop_id' => $this->shop->id,
             'client_id' => $this->client->id,
             'amount' => 24000,
+            'currency_id' => $this->uzs->id,
             'payment_type' => 'cash',
             'user_id' => $this->user->id,
             'occurred_at' => now(),
         ]);
 
-        $this->assertSame(0.0, $this->client->balance());
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
     }
 
     /**
@@ -145,28 +156,29 @@ class ClientDebtTest extends TestCase {
             'shop_id' => $this->shop->id,
             'client_id' => $this->client->id,
             'amount' => 20000,
+            'currency_id' => $this->uzs->id,
             'user_id' => $this->user->id,
             'occurred_at' => now(),
         ]);
 
-        $this->assertSame(-8000.0, $this->client->balance());
+        $this->assertSame(-8000.0, $this->client->balanceIn($this->uzs->id));
     }
 
     /** The goods came back, so the debt did too. */
     public function test_cancelling_a_credit_sale_removes_the_debt(): void {
         $sale = $this->sell(2, 12000, 0, $this->client->id);
-        $this->assertSame(24000.0, $this->client->balance());
+        $this->assertSame(24000.0, $this->client->balanceIn($this->uzs->id));
 
         app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
 
-        $this->assertSame(0.0, $this->client->balance());
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
     }
 
     public function test_debts_from_several_sales_add_up(): void {
         $this->sell(1, 12000, 0, $this->client->id);
         $this->sell(2, 12000, 4000, $this->client->id);
 
-        $this->assertSame(32000.0, $this->client->balance());
+        $this->assertSame(32000.0, $this->client->balanceIn($this->uzs->id));
     }
 
     /** One shop's debtors are not another's. */
@@ -218,6 +230,47 @@ class ClientDebtTest extends TestCase {
         $this->assertSame(2, Client::query()->whereNull('phone_number')->count());
     }
 
+    /**
+     * Two currencies are two debts, not one number.
+     *
+     * Summed together, eleven dollars and twelve thousand som read as
+     * 12,011 — and a dollar handed back cancels a som, so the shop is told
+     * it has been paid when it has not. This is why the balance is a map.
+     */
+    public function test_debts_in_two_currencies_do_not_add_up(): void {
+        $this->sell(1, 12000, 0, $this->client->id, $this->uzs->id);
+        $this->sell(1, 11, 0, $this->client->id, $this->usd->id);
+
+        $this->assertSame(12000.0, $this->client->balanceIn($this->uzs->id));
+        $this->assertSame(11.0, $this->client->balanceIn($this->usd->id));
+    }
+
+    /** And a dollar paid back settles dollars, not som. */
+    public function test_a_payment_only_settles_its_own_currency(): void {
+        $this->sell(1, 12000, 0, $this->client->id, $this->uzs->id);
+        $this->sell(1, 11, 0, $this->client->id, $this->usd->id);
+
+        ClientPayment::create([
+            'shop_id' => $this->shop->id,
+            'client_id' => $this->client->id,
+            'amount' => 11,
+            'currency_id' => $this->usd->id,
+            'user_id' => $this->user->id,
+            'occurred_at' => Carbon::now(),
+        ]);
+
+        $this->assertSame(0.0, $this->client->balanceIn($this->usd->id));
+        $this->assertSame(12000.0, $this->client->balanceIn($this->uzs->id));
+    }
+
+    /** A currency they have never traded in is not a debt. */
+    public function test_an_untouched_currency_has_no_balance(): void {
+        $this->sell(1, 12000, 0, $this->client->id, $this->uzs->id);
+
+        $this->assertSame(0.0, $this->client->balanceIn($this->usd->id));
+        $this->assertSame([$this->uzs->id => 12000.0], $this->client->balances());
+    }
+
     /** A payment carries when it happened, like every other write. */
     public function test_a_payment_keeps_the_time_it_was_taken(): void {
         $this->sell(1, 12000, 0, $this->client->id);
@@ -226,6 +279,7 @@ class ClientDebtTest extends TestCase {
             'shop_id' => $this->shop->id,
             'client_id' => $this->client->id,
             'amount' => 12000,
+            'currency_id' => $this->uzs->id,
             'user_id' => $this->user->id,
             'occurred_at' => Carbon::parse('2026-09-19 10:00'),
         ]);

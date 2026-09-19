@@ -22,6 +22,19 @@ import { enqueue, pushOutbox } from './sync'
  */
 export const WALK_IN_NAME = 'Naqd xaridor'
 
+/**
+ * The currencies a client actually owes something in, largest debt first.
+ *
+ * Zeroes are dropped: a currency they have settled is not worth a badge, and
+ * showing "0 qarz" beside a name reads as a warning about nothing.
+ */
+export function owedIn(balances?: Record<number, number>): Array<[number, number]> {
+  return Object.entries(balances ?? {})
+    .map(([id, amount]) => [Number(id), amount] as [number, number])
+    .filter(([, amount]) => amount !== 0)
+    .sort((a, b) => b[1] - a[1])
+}
+
 export type CartLine = {
   product: Product
   quantity: number

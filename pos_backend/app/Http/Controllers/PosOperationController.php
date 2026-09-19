@@ -114,6 +114,10 @@ class PosOperationController extends Controller {
             'client_id' => ['required', 'integer', 'exists:clients,id'],
             'sale_id' => ['nullable', 'integer', 'exists:sales,id'],
             'amount' => ['required', 'numeric', 'gt:0'],
+            // Which debt is being settled. Omitted falls back to the shop's
+            // own currency in the dispatcher, which is what an older till
+            // that does not ask the question is handing over.
+            'currency_id' => ['nullable', 'integer', 'exists:currencies,id'],
             'payment_type' => ['nullable', 'string', 'max:24'],
             'note' => ['nullable', 'string', 'max:255'],
         ]);
