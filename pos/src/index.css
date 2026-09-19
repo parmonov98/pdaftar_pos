@@ -1030,3 +1030,29 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   /* The number keeps the middle and shrinks instead of the buttons. */
   .cart-row .stepper input { min-width: 0; text-align: center; }
 }
+
+
+/* ─── A phone held sideways ───────────────────────────────────────────────
+   812x375: the chrome (topbar, tab strip, search) plus a content-height
+   sale panel came to more than the whole screen, so the 1fr row holding the
+   basket and the product list collapsed to zero height. Not cramped —
+   absent. There was no way to sell at all until the phone was turned back.
+
+   A landscape phone is a poor shape for a till and this does not pretend
+   otherwise; it makes the page scroll and guarantees the work area a floor,
+   which is the difference between awkward and unusable. */
+@media (max-height: 560px) and (max-width: 980px) {
+  .app { height: auto; min-height: 100vh; min-height: 100dvh; }
+
+  .main { grid-template-rows: auto auto; }
+
+  /* Enough for the search box and a few rows — below this the pane is a
+     label with nothing under it. */
+  .split { min-height: 280px; }
+
+  /* Every point counts here, and these are the rows that spend them on
+     padding rather than on information. */
+  .totals { padding: 8px 16px; }
+  .totals .row { padding: 1px 0; }
+  .side-foot { display: none; }
+}
