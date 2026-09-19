@@ -750,3 +750,30 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   border-radius: 4px; padding: 1px 5px; margin-right: 4px;
 }
 @media (max-width: 700px) { .keyhelp { display: none; } }
+
+/* The basket's layout depends on the basket's width, not the window's.
+   Once it shares the screen with the product list it can be half as wide as
+   the page, and the five-column row that fits a 1366 monoblok leaves the
+   product name about 80px — enough for "Coca-C…". A media query cannot see
+   this: the window is wide, the pane is not. */
+.cart-pane { container-type: inline-size; }
+
+@container (max-width: 620px) {
+  .cart-head-row { display: none; }
+
+  .cart-row {
+    grid-template-columns: 1fr 1fr auto;
+    grid-template-areas:
+      "name  name  del"
+      "qty   price sum";
+    row-gap: 10px;
+    align-items: center;
+  }
+  .cart-row .cell.name { grid-area: name; }
+  .cart-row .cell:nth-child(2) { grid-area: qty; }
+  .cart-row .cell:nth-child(3) { grid-area: price; }
+  .cart-row .cell:nth-child(4) { grid-area: sum; }
+  .cart-row .cell:nth-child(5) { grid-area: del; }
+  .cart-row .cell.c { justify-content: stretch; }
+  .cart-row .stepper { width: 100%; }
+}
