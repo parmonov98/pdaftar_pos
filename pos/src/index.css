@@ -802,3 +802,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
    facts, so they do not share a colour. */
 .tag.debt { color: var(--danger-text); border-color: var(--danger-line); }
 .tag.credit { color: var(--ok-text); border-color: var(--ok-line); }
+
+/* "1 [karobka] = [12] dona" — read as a sentence, because that is how a
+   shopkeeper says it. */
+.pack-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pack-row select { flex: 0 1 140px; }
+.pack-row input { flex: 0 1 90px; }
+.pack-lead { color: var(--muted); font-size: 13px; white-space: nowrap; }

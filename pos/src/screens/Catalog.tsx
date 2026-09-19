@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Client, type Product } from '../db'
 import { formatMoney, WALK_IN_NAME } from '../sales'
+import { DebtPayment } from './DebtPayment'
 import { ProductForm } from './ProductForm'
 
 /**
@@ -130,6 +131,7 @@ export function Products() {
 
 export function Clients() {
   const [query, setQuery] = useState('')
+  const [paying, setPaying] = useState<Client | null>(null)
 
   const clients = useLiveQuery(() => db.clients.toArray(), [], [] as Client[])
 
@@ -160,7 +162,19 @@ export function Clients() {
         />
       </div>
 
-      <div className="view-summary">{rows.length} ta mijoz</div>
+      <div className="view-summary">
+        {rows.length} ta mijoz
+        {(() => {
+          // The number the owner actually opens this screen for.
+          const owed = rows.reduce((sum, c) => sum + Math.max(0, c.balance ?? 0), 0)
+          const debtors = rows.filter((c) => (c.balance ?? 0) > 0).length
+          return owed > 0 ? (
+            <span style={{ color: 'var(--danger-text)' }}>
+              {' '}· {debtors} ta qarzdor, jami {formatMoney(owed)}
+            </span>
+          ) : null
+        })()}
+      </div>
 
       <div className="view-body">
         {rows.length === 0 && (
@@ -172,15 +186,31 @@ export function Clients() {
         )}
 
         {rows.map((client) => (
-          <div className="list-row" key={client.id}>
+          <div
+            className="list-row tappable"
+            key={client.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setPaying(client)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setPaying(client)}
+          >
             <span className="grow">
               <span className="nm">{client.name}</span>
               <span className="sub">{client.phone_number ?? "Telefon yo'q"}</span>
             </span>
+            {typeof client.balance === 'number' && client.balance !== 0 && (
+              <span className={`tag ${client.balance > 0 ? 'debt' : 'credit'}`}>
+                {client.balance > 0
+                  ? `${formatMoney(client.balance)} qarz`
+                  : `${formatMoney(-client.balance)} haqdor`}
+              </span>
+            )}
             {client.is_blocked && <span className="tag danger">bloklangan</span>}
           </div>
         ))}
       </div>
+
+      {paying && <DebtPayment client={paying} onClose={() => setPaying(null)} />}
     </div>
   )
 }

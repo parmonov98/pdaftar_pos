@@ -386,6 +386,15 @@ export function fetchRecentSales(params: { limit?: number; mine?: boolean } = {}
   return pos<{ data: RecentSale[] }>(`/sales/recent?${q.toString()}`).then((r) => r.data)
 }
 
+/** A second way to sell the product: "1 karobka = 12 dona", with its price. */
+export type ProductUnitInput = {
+  unit_id: number
+  numerator: number
+  denominator: number
+  is_base?: boolean
+  prices?: Array<{ currency_id: number | null; amount: number; type?: string }>
+}
+
 export type ProductInput = {
   name: string
   barcode?: string | null
@@ -396,6 +405,7 @@ export type ProductInput = {
   /** Absent = stock not tracked. NOT the same as 0 — see the backend. */
   quantity?: number | null
   low_stock_threshold?: number | null
+  units?: ProductUnitInput[]
 }
 
 /**

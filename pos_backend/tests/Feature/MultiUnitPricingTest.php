@@ -113,6 +113,36 @@ class MultiUnitPricingTest extends TestCase {
         $this->assertSame(1, $base->base_units_numerator);
     }
 
+    /**
+     * A product given its box before its bottle.
+     *
+     * The old fallback took "whichever unit exists first" as the base, so the
+     * box became the base: every price read from products.price, and every
+     * sale took one off the shelf instead of twelve. Nothing raised.
+     */
+    public function test_a_non_unit_ratio_is_never_mistaken_for_the_base(): void {
+        $pricing = app(PosPricingService::class);
+
+        $fresh = Product::create([
+            'shop_id' => $this->shop->id, 'name' => 'Fanta', 'price' => 11000,
+            'unit_id' => $this->dona->id, 'currency_id' => $this->uzs->id, 'quantity' => 0,
+        ]);
+
+        // The box arrives first, with no base unit anywhere.
+        ProductUnit::create([
+            'shop_id' => $this->shop->id, 'product_id' => $fresh->id,
+            'unit_id' => $this->karobka->id,
+            'base_units_numerator' => 12, 'base_units_denominator' => 1,
+        ]);
+
+        $this->assertNull($pricing->baseUnit($fresh), 'a 12:1 box is not a base unit');
+
+        // And asking for one creates the real thing rather than adopting it.
+        $base = $pricing->ensureBaseUnit($fresh);
+        $this->assertSame($this->dona->id, $base->unit_id);
+        $this->assertSame(1, $base->base_units_numerator);
+    }
+
     /** The one that costs money when it is wrong. */
     public function test_selling_one_box_takes_twelve_off_the_shelf(): void {
         $box = $this->boxUnit(12);

@@ -25,6 +25,8 @@ export function ProductForm({
   const editing = product !== null
 
   const units = useLiveQuery(() => db.units.toArray(), [], [] as Unit[])
+  const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as { id: number }[])
+  const currencyId = product?.currency_id ?? currencies[0]?.id ?? null
 
   const [name, setName] = useState(product?.name ?? '')
   const [barcode, setBarcode] = useState(product?.barcode ?? '')
@@ -40,6 +42,18 @@ export function ProductForm({
   const [threshold, setThreshold] = useState(
     product?.low_stock_threshold != null ? String(product.low_stock_threshold) : '',
   )
+
+  /*
+   * A second way to sell the same thing — "1 karobka = 12 dona".
+   *
+   * Offered on create only. Changing a ratio after sales exist is a
+   * different and more dangerous act: old lines keep their snapshot, but
+   * anyone reading the catalogue would see a number that no longer matches
+   * what was sold. That belongs on its own screen, with a warning.
+   */
+  const [packUnitId, setPackUnitId] = useState<number | null>(null)
+  const [packPer, setPackPer] = useState('')
+  const [packPrice, setPackPrice] = useState('')
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -81,6 +95,10 @@ export function ProductForm({
       low_stock_threshold: threshold.trim() === '' ? null : Number(threshold),
     }
 
+    const packPerNum = Number(packPer)
+    const wantsPack =
+      !editing && packUnitId !== null && packPerNum > 0 && packUnitId !== unitId
+
     try {
       if (editing) {
         // Stock is deliberately absent here. It moves through sales,
@@ -92,6 +110,19 @@ export function ProductForm({
         await createProduct({
           ...input,
           quantity: tracked ? Number(quantity || 0) : null,
+          units: wantsPack
+            ? [
+                {
+                  unit_id: packUnitId,
+                  numerator: packPerNum,
+                  denominator: 1,
+                  prices:
+                    packPrice.trim() === ''
+                      ? []
+                      : [{ currency_id: currencyId, amount: Number(packPrice) }],
+                },
+              ]
+            : undefined,
         })
       }
 
@@ -207,6 +238,57 @@ export function ProductForm({
                 inputMode="decimal"
                 placeholder="Masalan: 5 — bo'sh qoldirsangiz ogohlantirilmaydi"
               />
+            </div>
+          )}
+
+          {!editing && units.length > 1 && (
+            <div className="field">
+              <label>Yirik birlik (ixtiyoriy)</label>
+              <div className="pack-row">
+                <span className="pack-lead">1</span>
+                <select
+                  value={packUnitId ?? ''}
+                  onChange={(e) => setPackUnitId(e.target.value === '' ? null : Number(e.target.value))}
+                  aria-label="Yirik birlik"
+                >
+                  <option value="">—</option>
+                  {units
+                    .filter((u) => u.id !== unitId)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.short_name || u.name}
+                      </option>
+                    ))}
+                </select>
+                <span className="pack-lead">=</span>
+                <input
+                  value={packPer}
+                  onChange={(e) => setPackPer(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="12"
+                  aria-label="Nechta asosiy birlik"
+                  disabled={packUnitId === null}
+                />
+                <span className="pack-lead">
+                  {units.find((u) => u.id === unitId)?.short_name ?? ''}
+                </span>
+              </div>
+
+              {packUnitId !== null && (
+                <input
+                  value={packPrice}
+                  onChange={(e) => setPackPrice(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Yirik birlik narxi (bo'sh — sotib bo'lmaydi)"
+                  style={{ marginTop: 8 }}
+                  aria-label="Yirik birlik narxi"
+                />
+              )}
+
+              <div className="hint">
+                Masalan: 1 karobka = 12 dona. Kassada har qatorda qaysi birlikda sotilayotganini
+                tanlash mumkin bo'ladi.
+              </div>
             </div>
           )}
 

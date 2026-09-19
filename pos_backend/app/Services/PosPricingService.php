@@ -27,7 +27,18 @@ class PosPricingService {
      */
     public function baseUnit(Product $product): ?ProductUnit {
         return $product->productUnits()->where('is_base', true)->first()
-            ?? $product->productUnits()->orderBy('id')->first();
+            // A 1:1 row is a base unit whether or not the flag was ever set —
+            // imports and rows written before the flag existed may not have it.
+            //
+            // Deliberately NOT "whichever unit exists first". A product given
+            // a karobka before its dona would have had the box treated as the
+            // base: prices read from products.price, and every sale taking one
+            // off the shelf instead of twelve. Nothing would have raised.
+            ?? $product->productUnits()
+                ->where('base_units_numerator', 1)
+                ->where('base_units_denominator', 1)
+                ->orderBy('id')
+                ->first();
     }
 
     /**
