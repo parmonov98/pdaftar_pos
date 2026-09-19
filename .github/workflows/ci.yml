@@ -14,7 +14,7 @@ jobs:
   # Stands alone: the till talks to the POS API over HTTP and shares no code
   # with it, so nothing here needs pDaftar's domain checked out.
   pos:
-    name: pos (lint + build)
+    name: pos (lint + test + build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +30,10 @@ jobs:
 
       - name: oxlint
         run: npm run lint
+        working-directory: pos
+
+      - name: vitest
+        run: npm test
         working-directory: pos
 
       - name: tsc + vite build
