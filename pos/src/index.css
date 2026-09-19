@@ -679,18 +679,35 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
      button, which is the order a cashier reads them in: what is owed, then
      the button that takes it. */
   .right { border-left: none; border-top: 1px solid var(--line); }
-  .totals {
+
+  /* Scoped to the sale panel. Unscoped, this was also pinning the button
+     row of every modal — which happens to be useful there and is kept
+     below, but on purpose rather than by leak. A rule that only works
+     because of where it landed is one nobody can safely move. */
+  .right > .totals {
     position: sticky;
     bottom: 64px;
     z-index: 5;
     background: var(--panel);
   }
-  .actions {
+  .right > .actions {
     position: sticky;
     bottom: 0;
     z-index: 6;
     background: var(--panel);
     border-top: 1px solid var(--line);
+  }
+
+  /* And in a dialog, deliberately: the product form is 858px of fields in a
+     729px sheet, so an unpinned Saqlash means scrolling to the end to reach
+     the button every single time. */
+  .modal .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
   }
   /* Empty and only there to push the totals down on a tall desktop panel;
      on a phone it adds a gap above a bar that is already pinned. */
