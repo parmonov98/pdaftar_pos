@@ -30,12 +30,20 @@ return new class extends Migration {
         Schema::create('pos_terminals', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
+            // pDaftar's shop, by id — but NOT a foreign key. The POS runs on
+            // its own server with its own database and reaches pDaftar over
+            // the API, so `shops` does not exist here to point at. The id is
+            // still the join: it is what every API call carries.
+            //
+            // What the database no longer enforces, the application must:
+            // nothing here stops a row naming a shop that pDaftar deleted, so
+            // the API layer is the only place that can catch it.
+            $table->unsignedBigInteger('shop_id');
             // The pDaftar user this till acts as. Every write the terminal
             // makes is attributed to them, exactly as if they had done it in
             // the app — which is the whole point of the boss's "user tokeni
             // bilan amalga oshiriladi".
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            $table->unsignedBigInteger('user_id')->index();
 
             $table->string('name', 120);
 
