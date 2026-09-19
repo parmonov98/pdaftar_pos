@@ -649,13 +649,30 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .topbar .brand { display: none; }
 
   /* Stacked, the sale panel sits below a cart that can be any length, so the
-     total and the pay button scroll away exactly when they are needed. */
+     total and the pay button scroll away exactly when they are needed most.
+     Pinned to the bottom of the screen instead.
+     
+     `.totals` and `.actions` are two siblings, so they are pinned as a pair
+     rather than wrapped in a new element — the totals sit directly above the
+     button, which is the order a cashier reads them in: what is owed, then
+     the button that takes it. */
   .right { border-left: none; border-top: 1px solid var(--line); }
-  .side-total {
-    position: sticky; bottom: 0; z-index: 5;
+  .totals {
+    position: sticky;
+    bottom: 64px;
+    z-index: 5;
+    background: var(--panel);
+  }
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
     background: var(--panel);
     border-top: 1px solid var(--line);
   }
+  /* Empty and only there to push the totals down on a tall desktop panel;
+     on a phone it adds a gap above a bar that is already pinned. */
+  .side-spacer { display: none; }
 }
 
 /* A monoblok is a touchscreen, so this is not only about phones: fingers need
