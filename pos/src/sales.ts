@@ -27,6 +27,8 @@ export type CartLine = {
   quantity: number
   /** Cashier may override the catalogue price; the shop opted into that. */
   price: number
+  /** Which unit is being sold. Null = the product's base unit. */
+  productUnitId?: number | null
 }
 
 export type Payment = {
@@ -88,6 +90,9 @@ export async function submitSale(
     note: payment.note || null,
     items: lines.map((line) => ({
       product_id: line.product.id,
+      // Without this the server prices the base unit and takes one off the
+      // shelf instead of twelve.
+      product_unit_id: line.productUnitId ?? null,
       quantity: line.quantity,
       price: line.price,
     })),
@@ -143,8 +148,16 @@ async function decrementLocalStock(lines: CartLine[]): Promise<void> {
     for (const line of lines) {
       const current = await db.products.get(line.product.id)
       if (!current || current.quantity === null) continue
+
+      // In BASE units, the same as the server. Taking one off for a box of
+      // twelve would leave this till showing a shelf that does not exist
+      // until the next sync corrected it — and quietly overselling until it
+      // did.
+      const unit = current.units?.find((u) => u.id === line.productUnitId)
+      const base = unit ? (line.quantity * unit.numerator) / unit.denominator : line.quantity
+
       await db.products.update(line.product.id, {
-        quantity: round2(current.quantity - line.quantity),
+        quantity: round2(current.quantity - base),
       })
     }
   })

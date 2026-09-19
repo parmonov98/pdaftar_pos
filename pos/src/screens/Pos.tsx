@@ -4,6 +4,7 @@ import { db, type Client, type Currency, type DraftLine, type Product, type Sale
 import { type MeResponse } from '../api'
 import {
   addLine,
+  priceFor,
   closeDraft,
   createDraft,
   ensureDraft,
@@ -236,6 +237,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       const product = productsById.get(line.productId)
 
       return {
+        productUnitId: line.productUnitId ?? null,
         // A product deleted from the catalogue mid-sale must not blank the row.
         // The line's own snapshot carries enough to finish and print it.
         product:
@@ -683,7 +685,47 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                             )
                           }
                         />
-                        <span className="unit">{unitName(line.product.unit_id)}</span>
+                        {/* A product sold only one way shows its unit as a
+                            label; one sold by the box AND the bottle gets a
+                            picker, because which one is being sold changes
+                            both the price and how much stock leaves. */}
+                        {(line.product.units?.length ?? 0) > 1 ? (
+                          <select
+                            className="unit-select"
+                            value={line.productUnitId ?? ''}
+                            aria-label="Birlik"
+                            onChange={(e) => {
+                              const id = e.target.value === '' ? null : Number(e.target.value)
+                              mutateLines((lines) =>
+                                lines.map((l) =>
+                                  l.productId === line.product.id
+                                    ? {
+                                        ...l,
+                                        productUnitId: id,
+                                        // The price follows the unit. Leaving
+                                        // the bottle's price on a box is the
+                                        // whole reason this picker exists.
+                                        price: priceFor(line.product, id) ?? l.price,
+                                      }
+                                    : l,
+                                ),
+                              )
+                            }}
+                          >
+                            {line.product.units
+                              ?.filter((u) => u.is_active)
+                              .map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {unitName(u.unit_id)}
+                                  {u.numerator === 1 && u.denominator === 1
+                                    ? ''
+                                    : ` (${u.numerator}/${u.denominator})`}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <span className="unit">{unitName(line.product.unit_id)}</span>
+                        )}
                       </div>
                     </div>
 

@@ -108,6 +108,29 @@ export async function ensureDraft(currencyId: number): Promise<string> {
 }
 
 /** Add one unit of a product to a draft, merging with an existing line. */
+/**
+ * What one of `productUnitId` costs.
+ *
+ * Mirrors the server's order — the exact row, then the cash price for the
+ * same unit, and only then the product's own column, which means the BASE
+ * unit and nothing else. Pricing a box from it would be out by a factor of
+ * twelve, so it deliberately does not scale.
+ */
+export function priceFor(product: Product, productUnitId: number | null): number | null {
+  const unit = product.units?.find((u) => u.id === productUnitId)
+
+  if (unit) {
+    const rows = product.prices ?? []
+    const exact = rows.find((p) => p.product_unit_id === unit.id && p.type === 'sale')
+    if (exact) return exact.amount
+
+    const isBase = unit.numerator === 1 && unit.denominator === 1
+    if (!isBase) return null
+  }
+
+  return product.price ?? null
+}
+
 export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
   const existing = lines.find((l) => l.productId === product.id)
 
@@ -117,13 +140,18 @@ export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
     )
   }
 
+  // Scanning adds the base unit: a barcode is on a bottle, not on a box of
+  // them. The cashier changes it on the line when they meant the box.
+  const base = product.units?.find((u) => u.is_base) ?? product.units?.[0] ?? null
+
   return [
     ...lines,
     {
       productId: product.id,
       name: product.name ?? '',
       quantity: 1,
-      price: product.price ?? 0,
+      price: priceFor(product, base?.id ?? null) ?? product.price ?? 0,
+      productUnitId: base?.id ?? null,
     },
   ]
 }

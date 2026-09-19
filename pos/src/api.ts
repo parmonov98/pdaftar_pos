@@ -421,6 +421,39 @@ export function updateProduct(id: number, input: Partial<ProductInput>): Promise
   }).then((r) => r.data.data.product)
 }
 
+/**
+ * Add a customer.
+ *
+ * Online only, for the same reason a product is: the sale would otherwise
+ * have to carry an unsaved client through the outbox and name somebody the
+ * server has never heard of. Selling for cash needs no client at all, so
+ * this never blocks a queue.
+ */
+export function createClient(input: {
+  name: string
+  phone_number?: string | null
+  note?: string | null
+}): Promise<{ id: number; name: string }> {
+  return pos<{ data: { data: { client: { id: number; name: string } } } }>('/clients', {
+    method: 'POST',
+    body: JSON.stringify({ client_operation_id: crypto.randomUUID(), ...input }),
+  }).then((r) => r.data.data.client)
+}
+
+/** Money coming back against a debt. */
+export function payClientDebt(input: {
+  client_id: number
+  amount: number
+  payment_type?: string | null
+  note?: string | null
+  sale_id?: number | null
+}): Promise<{ id: number }> {
+  return pos<{ data: { data: { payment: { id: number } } } }>('/clients/payments', {
+    method: 'POST',
+    body: JSON.stringify({ client_operation_id: crypto.randomUUID(), ...input }),
+  }).then((r) => r.data.data.payment)
+}
+
 export function lookupByCode(code: string) {
   return pos<{ data: unknown }>(`/products/lookup?code=${encodeURIComponent(code)}`).then((r) => r.data)
 }

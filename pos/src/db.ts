@@ -18,6 +18,25 @@ import Dexie, { type Table } from 'dexie'
  * "clear the cache" is always safe, "clear the outbox" never is.
  */
 
+/** One way a product can be sold, and what it is worth in base units. */
+export type ProductUnitOption = {
+  id: number
+  unit_id: number
+  /** quantity x numerator / denominator = base units. Integers, so a third
+   *  of a box stays exact and three of them add back up to one. */
+  numerator: number
+  denominator: number
+  is_base: boolean
+  is_active: boolean
+}
+
+export type ProductPriceRow = {
+  product_unit_id: number
+  currency_id: number
+  type: string
+  amount: number
+}
+
 export type Product = {
   id: number
   name: string | null
@@ -30,6 +49,10 @@ export type Product = {
   currency_id: number | null
   supplier_id: number | null
   low_stock_threshold: number | null
+  image_url?: string | null
+  /** Every unit this can be sold in. Empty for a single-unit product. */
+  units?: ProductUnitOption[]
+  prices?: ProductPriceRow[]
   deleted?: boolean
   updated_at: string | null
 }
@@ -39,6 +62,8 @@ export type Client = {
   name: string
   phone_number: string | null
   address: string | null
+  /** What they owe. Computed by the server from sales and payments. */
+  balance?: number
   is_blocked?: boolean
   deleted?: boolean
   updated_at: string | null
@@ -104,6 +129,12 @@ export type DraftLine = {
   name: string
   quantity: number
   price: number
+  /**
+   * Which unit this line is sold in. Null means the product's base unit,
+   * which is also what every line written before multi-unit existed means —
+   * so an open draft from yesterday keeps working.
+   */
+  productUnitId?: number | null
 }
 
 /**

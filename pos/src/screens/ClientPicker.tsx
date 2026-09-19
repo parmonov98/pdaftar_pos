@@ -1,16 +1,20 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { createClient } from '../api'
 import { db, type Client } from '../db'
-import { WALK_IN_NAME } from '../sales'
+import { formatMoney, WALK_IN_NAME } from '../sales'
+import { pullAll } from '../sync'
 
 /**
  * Choosing who the sale is for.
  *
  * Reads from the local cache, so it works with no connection — a nasiya sale to
- * a regular customer must not depend on the shop's internet. Creating a new
- * client offline is deliberately not offered here: the sale would then have to
- * carry an unsaved client through the outbox, and the common case (a stranger
- * paying cash) needs no client at all.
+ * a regular customer must not depend on the shop's internet.
+ *
+ * Adding one needs a connection, and the form says so instead of failing at
+ * submit: the sale would otherwise carry an unsaved client through the outbox
+ * and name somebody the server has never heard of. It never blocks a queue,
+ * because the common case — a stranger paying cash — needs no client at all.
  */
 export function ClientPicker({
   onPick,
@@ -20,6 +24,12 @@ export function ClientPicker({
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const online = navigator.onLine
 
   const clients = useLiveQuery(() => db.clients.toArray(), [], [] as Client[])
 
@@ -38,6 +48,82 @@ export function ClientPicker({
     return list.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 100)
   }, [clients, query])
 
+  async function save(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+
+    try {
+      const created = await createClient({
+        name: newName.trim(),
+        phone_number: newPhone.trim() === '' ? null : newPhone.trim(),
+      })
+
+      // Pull before handing it back, so the caller gets a real cached row
+      // rather than a stub that the next sync would overwrite.
+      await pullAll()
+      const stored = await db.clients.get(created.id)
+      onPick(stored ?? { ...created, phone_number: null, address: null, updated_at: null })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Saqlashda xatolik')
+      setBusy(false)
+    }
+  }
+
+  if (adding) {
+    return (
+      <div className="overlay" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <h2>Yangi mijoz</h2>
+
+          {!online && (
+            <div className="notice err">
+              Internet yo'q. Mijoz qo'shish uchun ulanish kerak — naqd sotuvga mijoz shart emas.
+            </div>
+          )}
+          {error && <div className="notice err">{error}</div>}
+
+          <form onSubmit={save}>
+            <div className="field">
+              <label htmlFor="c-name">Ismi</label>
+              <input
+                id="c-name"
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Sobir aka"
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="c-phone">Telefon raqam</label>
+              <input
+                id="c-phone"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+                inputMode="tel"
+              />
+              {/* The number is how a debt gets chased, so it is worth asking
+                  for — but a regular whose number nobody has is still better
+                  recorded than not recorded. */}
+              <div className="hint">Qarzni eslatish uchun kerak bo'ladi.</div>
+            </div>
+
+            <div className="actions">
+              <button type="button" className="ghost" onClick={() => setAdding(false)}>
+                Orqaga
+              </button>
+              <button className="primary" disabled={busy || !online || newName.trim() === ''}>
+                {busy ? 'Saqlanmoqda…' : 'Saqlash'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -52,9 +138,14 @@ export function ClientPicker({
           />
         </div>
 
-        <button type="button" className="ghost" style={{ width: '100%' }} onClick={() => onPick(null)}>
-          Naqd xaridor (ismsiz)
-        </button>
+        <div className="two-col">
+          <button type="button" className="ghost" onClick={() => onPick(null)}>
+            Naqd xaridor (ismsiz)
+          </button>
+          <button type="button" className="primary" onClick={() => setAdding(true)}>
+            + Yangi mijoz
+          </button>
+        </div>
 
         <div className="client-list">
           {matches.map((client) => (
@@ -68,6 +159,13 @@ export function ClientPicker({
                 <span className="nm">{client.name}</span>
                 {client.phone_number && <span className="sub">{client.phone_number}</span>}
               </span>
+              {typeof client.balance === 'number' && client.balance !== 0 && (
+                <span className={`tag ${client.balance > 0 ? 'debt' : 'credit'}`}>
+                  {client.balance > 0
+                    ? `${formatMoney(client.balance)} qarz`
+                    : `${formatMoney(-client.balance)} haqdor`}
+                </span>
+              )}
               {client.is_blocked && <span className="tag">bloklangan</span>}
             </button>
           ))}
