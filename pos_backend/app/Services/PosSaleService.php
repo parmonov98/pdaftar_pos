@@ -141,6 +141,13 @@ class PosSaleService {
                 'occurred_at' => $at,
             ]);
 
+            // The client's balance is derived from their sales, but the
+            // catalogue pull that carries it is keyed on clients.updated_at —
+            // which a new sale does not move. Without this the debt badge is
+            // correct on the till that rang the sale up and frozen on every
+            // other one, for as long as nothing else edits the customer.
+            $this->touchClient($clientId);
+
             foreach ($prepared as [$product, $quantity, $price, $lineTotal, $productUnit]) {
                 // The conversion is snapshotted with the line. A shop that
                 // redefines "karobka" from twelve to six must not thereby
@@ -190,6 +197,21 @@ class PosSaleService {
      *
      * @throws BusinessException
      */
+    /**
+     * Move a client's updated_at so the pull re-sends them.
+     *
+     * Their balance lives in two other tables; this row is only the cursor
+     * the sync reads. Cheap, and the alternative is a stale number that the
+     * shop trusts.
+     */
+    private function touchClient(?int $clientId): void {
+        if ($clientId === null) {
+            return;
+        }
+
+        Client::query()->whereKey($clientId)->update(['updated_at' => now()]);
+    }
+
     public function cancel(PosTerminal $terminal, int $saleId, ?Carbon $occurredAt): Sale {
         return DB::transaction(function () use ($terminal, $saleId, $occurredAt) {
             $sale = Sale::query()
@@ -214,6 +236,9 @@ class PosSaleService {
                 'status' => Sale::STATUS_CANCELLED,
                 'cancelled_at' => $occurredAt ?? now(),
             ]);
+
+            // The debt went back with the goods, so the badge has to move too.
+            $this->touchClient($sale->client_id);
 
             return $sale->load('items');
         });

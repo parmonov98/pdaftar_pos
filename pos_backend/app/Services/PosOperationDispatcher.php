@@ -278,7 +278,7 @@ class PosOperationDispatcher {
             throw new BusinessException('Summa noldan katta bo\'lishi kerak');
         }
 
-        return ClientPayment::create([
+        $payment = ClientPayment::create([
             'shop_id' => $terminal->shop_id,
             'client_id' => $client->id,
             'sale_id' => $payload['sale_id'] ?? null,
@@ -294,6 +294,12 @@ class PosOperationDispatcher {
             'pos_terminal_id' => $terminal->id,
             'occurred_at' => $occurredAt ?? now(),
         ]);
+
+        // Same reason as a sale: the balance moved, the row the pull is keyed
+        // on did not, and the other till would go on showing the old debt.
+        Client::query()->whereKey($client->id)->update(['updated_at' => now()]);
+
+        return $payment;
     }
 
     /** @throws BusinessException */

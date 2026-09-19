@@ -271,6 +271,53 @@ class ClientDebtTest extends TestCase {
         $this->assertSame([$this->uzs->id => 12000.0], $this->client->balances());
     }
 
+    /**
+     * A debt that moved has to reach the other till.
+     *
+     * The balance is derived from sales and payments, but the catalogue pull
+     * that carries it is keyed on clients.updated_at — and neither of those
+     * writes touches that row. Without this the second till shows yesterday's
+     * debt forever, and the shop trusts it.
+     */
+    public function test_a_credit_sale_makes_the_client_resync(): void {
+        $before = $this->client->fresh()->updated_at;
+
+        $this->travel(2)->seconds();
+        $this->sell(1, 12000, 0, $this->client->id);
+
+        $this->assertTrue($this->client->fresh()->updated_at->greaterThan($before));
+    }
+
+    /** And so does the repayment that clears it. */
+    public function test_a_repayment_makes_the_client_resync(): void {
+        $this->sell(1, 12000, 0, $this->client->id);
+        $before = $this->client->fresh()->updated_at;
+
+        $this->travel(2)->seconds();
+
+        app(PosOperationDispatcher::class)->dispatch(
+            $this->terminal(),
+            'client.payment',
+            ['client_id' => $this->client->id, 'amount' => 12000, 'currency_id' => $this->uzs->id],
+            null,
+            $this->user->id,
+        );
+
+        $this->assertTrue($this->client->fresh()->updated_at->greaterThan($before));
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
+    }
+
+    /** Cancelling gives the goods back, and the badge has to follow. */
+    public function test_cancelling_a_credit_sale_makes_the_client_resync(): void {
+        $sale = $this->sell(1, 12000, 0, $this->client->id);
+        $before = $this->client->fresh()->updated_at;
+
+        $this->travel(2)->seconds();
+        app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
+
+        $this->assertTrue($this->client->fresh()->updated_at->greaterThan($before));
+    }
+
     /** A payment carries when it happened, like every other write. */
     public function test_a_payment_keeps_the_time_it_was_taken(): void {
         $this->sell(1, 12000, 0, $this->client->id);
