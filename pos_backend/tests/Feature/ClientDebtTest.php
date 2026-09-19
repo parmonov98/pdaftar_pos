@@ -16,6 +16,7 @@ use Pos\Models\Shop;
 use Pos\Models\Unit;
 use Pos\Models\User;
 use Pos\Models\UserShop;
+use Pos\Services\PosOperationDispatcher;
 use Pos\Services\PosSaleService;
 use Pos\Services\PosStockService;
 use Tests\TestCase;
@@ -175,6 +176,46 @@ class ClientDebtTest extends TestCase {
 
         $this->expectException(BusinessException::class);
         $this->sell(1, 12000, 0, $theirs->id);
+    }
+
+    /**
+     * One phone number, one customer.
+     *
+     * A shop that has the same person twice has their debt split across two
+     * rows: the cashier settles one, the other keeps owing, and nobody sees
+     * it until somebody adds the two up by hand.
+     */
+    public function test_a_second_client_cannot_take_an_existing_phone_number(): void {
+        $this->expectException(BusinessException::class);
+
+        app(PosOperationDispatcher::class)->dispatch(
+            $this->terminal(),
+            'client.create',
+            ['name' => 'Sobir', 'phone_number' => '+998901112233'],
+            null,
+            $this->user->id,
+        );
+    }
+
+    /** Regulars with no number on file are told apart by name, not refused. */
+    public function test_several_clients_may_have_no_phone_number(): void {
+        $dispatcher = app(PosOperationDispatcher::class);
+
+        foreach (['Anvar', 'Bobur'] as $name) {
+            $dispatcher->dispatch($this->terminal(), 'client.create', ['name' => $name], null, $this->user->id);
+        }
+
+        $this->assertSame(2, Client::query()->whereNull('phone_number')->count());
+    }
+
+    /** An empty string is not a phone number, and must not collide with one. */
+    public function test_a_blank_phone_number_is_stored_as_none(): void {
+        $dispatcher = app(PosOperationDispatcher::class);
+
+        $dispatcher->dispatch($this->terminal(), 'client.create', ['name' => 'Anvar', 'phone_number' => '  '], null, $this->user->id);
+        $dispatcher->dispatch($this->terminal(), 'client.create', ['name' => 'Bobur', 'phone_number' => ''], null, $this->user->id);
+
+        $this->assertSame(2, Client::query()->whereNull('phone_number')->count());
     }
 
     /** A payment carries when it happened, like every other write. */

@@ -224,10 +224,32 @@ class PosOperationDispatcher {
             throw new BusinessException('Mijoz ismi kerak');
         }
 
+        $phone = $payload['phone_number'] ?? null;
+        $phone = is_string($phone) && trim($phone) !== '' ? trim($phone) : null;
+
+        // One number, one customer. A shop that ends up with the same person
+        // twice has their debt split across two rows: the cashier settles one
+        // and the other keeps owing, invisibly, for as long as nobody adds the
+        // two up. Refused the same way a duplicate barcode is, and the message
+        // names the row that already exists so the cashier can pick it.
+        //
+        // Only for a number that was actually given — several regulars with no
+        // phone on file is ordinary, and they are told apart by name.
+        if ($phone !== null) {
+            $existing = Client::query()
+                ->where('shop_id', $terminal->shop_id)
+                ->where('phone_number', $phone)
+                ->first();
+
+            if ($existing !== null) {
+                throw new BusinessException("Bu raqam allaqachon ro'yxatda: {$existing->name}");
+            }
+        }
+
         return Client::create([
             'shop_id' => $terminal->shop_id,
             'name' => $name,
-            'phone_number' => $payload['phone_number'] ?? null,
+            'phone_number' => $phone,
             'note' => $payload['note'] ?? null,
         ]);
     }
