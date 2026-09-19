@@ -630,8 +630,23 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   /* The shop and cashier are already the drawer's first two lines. In the top
      bar they were wrapping the brand onto three lines. */
   .topbar .meta { display: none; }
-  .topbar .brand { white-space: nowrap; }
   .topbar { gap: 8px; padding: 8px 12px; }
+
+  /* Sinxronlash does not shrink, so on a 390px phone the bar was 9px wider
+     than the screen — enough to scroll the whole page sideways. The button
+     keeps its label (a cashier needs to know what it does) and gives up
+     padding instead. */
+  .topbar > .primary { padding-left: 10px; padding-right: 10px; font-size: 13px; }
+  .topbar .pill { padding: 4px 8px; font-size: 11.5px; }
+  .topbar .brand { white-space: nowrap; min-width: 0; }
+}
+
+/* Narrower still, and something has to go. The brand goes rather than
+   truncating: "pDaftar P…" reads as a broken layout, while its absence reads
+   as a small screen — and the name is still on the tab, the installed icon
+   and the drawer. */
+@media (max-width: 430px) {
+  .topbar .brand { display: none; }
 
   /* Stacked, the sale panel sits below a cart that can be any length, so the
      total and the pay button scroll away exactly when they are needed. */
