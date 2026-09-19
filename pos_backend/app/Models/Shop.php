@@ -29,12 +29,18 @@ class Shop extends Model {
         'pdaftar_shop_id',
         'terminal_limit',
         'is_active',
+        'currency_id',
+        'default_unit_id',
+        'allow_negative_stock',
+        'low_stock_threshold',
     ];
 
     protected function casts(): array {
         return [
             'is_active' => 'boolean',
+            'allow_negative_stock' => 'boolean',
             'terminal_limit' => 'integer',
+            'low_stock_threshold' => 'decimal:6',
         ];
     }
 
@@ -50,6 +56,18 @@ class Shop extends Model {
 
     public function terminals(): HasMany {
         return $this->hasMany(PosTerminal::class);
+    }
+
+    public function products(): HasMany {
+        return $this->hasMany(Product::class);
+    }
+
+    public function units(): HasMany {
+        return $this->hasMany(Unit::class);
+    }
+
+    public function currency(): BelongsTo {
+        return $this->belongsTo(Currency::class);
     }
 
     /**

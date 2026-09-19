@@ -10,7 +10,9 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Pos\Models\Currency;
 use Pos\Models\Shop;
+use Pos\Models\Unit;
 use Pos\Models\User;
 use Pos\Models\UserShop;
 
@@ -83,6 +85,24 @@ class AuthController extends Controller {
                 'shop_id' => $shop->id,
                 'role' => UserShop::ROLE_OWNER,
             ]);
+
+            // A shop with no unit and no currency cannot hold a single
+            // product, so the first thing a new owner would meet is a form
+            // that refuses to submit. These are the defaults for a shop in
+            // Uzbekistan; both are editable afterwards.
+            Unit::create([
+                'shop_id' => $shop->id,
+                'name' => 'dona',
+                'short_name' => 'dona',
+                'is_default' => true,
+            ]);
+
+            $sum = Currency::firstOrCreate(
+                ['code' => 'UZS'],
+                ['name' => "So'm", 'sign' => "so'm"],
+            );
+
+            $shop->forceFill(['currency_id' => $sum->id])->save();
 
             // Reloaded because the response reports terminal_limit, and that
             // value is a database default the freshly-created instance has
