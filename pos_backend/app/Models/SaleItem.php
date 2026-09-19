@@ -16,11 +16,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class SaleItem extends Model {
     protected $fillable = [
         'sale_id', 'product_id', 'name', 'code', 'barcode',
-        'unit_id', 'unit_name', 'quantity', 'price', 'total',
+        'unit_id', 'product_unit_id', 'unit_name',
+        'conversion_numerator', 'conversion_denominator',
+        'quantity', 'base_quantity', 'price', 'currency_id', 'total',
     ];
 
     protected function casts(): array {
-        return ['quantity' => 'decimal:6', 'price' => 'decimal:6', 'total' => 'decimal:6'];
+        return [
+            'quantity' => 'decimal:6',
+            'base_quantity' => 'decimal:6',
+            'price' => 'decimal:6',
+            'total' => 'decimal:6',
+            'conversion_numerator' => 'integer',
+            'conversion_denominator' => 'integer',
+        ];
     }
 
     public function sale(): BelongsTo {

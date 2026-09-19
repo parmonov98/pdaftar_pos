@@ -10,6 +10,7 @@ use Pos\Exceptions\BusinessException;
 use Pos\Models\Client;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
+use Pos\Models\ProductPrice;
 use Pos\Models\Sale;
 use Pos\Models\SaleItem;
 
@@ -24,7 +25,10 @@ use Pos\Models\SaleItem;
  * un-sell it; it only loses the record.
  */
 class PosSaleService {
-    public function __construct(private readonly PosStockService $stock) {}
+    public function __construct(
+        private readonly PosStockService $stock,
+        private readonly PosPricingService $pricing,
+    ) {}
 
     /**
      * @param  array{
@@ -65,16 +69,35 @@ class PosSaleService {
                 }
 
                 $quantity = (float) ($line['quantity'] ?? 0);
-                $price = (float) ($line['price'] ?? 0);
 
                 if ($quantity <= 0) {
                     throw new BusinessException($product->name.': miqdor noldan katta bo\'lishi kerak');
                 }
 
+                // Which unit this line is in — a box, a bottle, a kilo.
+                $productUnit = $this->pricing->resolveUnit($product, $line['product_unit_id'] ?? null);
+
+                // The till may send a price (the cashier overrode it, or it
+                // was chosen offline from the cached catalogue). When it does
+                // not, resolve one — and refuse rather than invent, because a
+                // guessed price is money lost quietly on every line.
+                $price = array_key_exists('price', $line) && $line['price'] !== null
+                    ? (float) $line['price']
+                    : $this->pricing->priceFor(
+                        $product,
+                        $productUnit,
+                        (int) ($payload['currency_id'] ?? $product->currency_id),
+                        ProductPrice::TYPE_SALE,
+                    );
+
+                if ($price === null) {
+                    throw new BusinessException($product->name.': bu birlik va valyuta uchun narx belgilanmagan');
+                }
+
                 $total = round($quantity * $price, 6);
                 $subtotal += $total;
 
-                $prepared[] = [$product, $quantity, $price, $total];
+                $prepared[] = [$product, $quantity, (float) $price, $total, $productUnit];
             }
 
             $discount = round((float) ($payload['discount_amount'] ?? 0), 6);
@@ -118,7 +141,14 @@ class PosSaleService {
                 'occurred_at' => $at,
             ]);
 
-            foreach ($prepared as [$product, $quantity, $price, $lineTotal]) {
+            foreach ($prepared as [$product, $quantity, $price, $lineTotal, $productUnit]) {
+                // The conversion is snapshotted with the line. A shop that
+                // redefines "karobka" from twelve to six must not thereby
+                // change what last month's sales meant.
+                $num = $productUnit?->base_units_numerator ?? 1;
+                $den = $productUnit?->base_units_denominator ?? 1;
+                $baseQuantity = round($quantity * $num / max(1, $den), 6);
+
                 SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $product->id,
@@ -126,10 +156,15 @@ class PosSaleService {
                     'name' => $product->name,
                     'code' => $product->code,
                     'barcode' => $product->barcode,
-                    'unit_id' => $product->unit_id,
-                    'unit_name' => $product->unit?->label(),
+                    'unit_id' => $productUnit?->unit_id ?? $product->unit_id,
+                    'product_unit_id' => $productUnit?->id,
+                    'unit_name' => $productUnit?->label() ?: $product->unit?->label(),
+                    'conversion_numerator' => $num,
+                    'conversion_denominator' => $den,
                     'quantity' => $quantity,
+                    'base_quantity' => $baseQuantity,
                     'price' => $price,
+                    'currency_id' => $payload['currency_id'] ?? $product->currency_id,
                     'total' => $lineTotal,
                 ]);
 
@@ -137,7 +172,9 @@ class PosSaleService {
                 // what it sold; a negative balance is a visible problem
                 // somebody can fix, whereas a refused sale is a customer
                 // standing at the counter with cash nobody will take.
-                $this->stock->recordSale($product, $quantity, $sale->id, $at, $userId);
+                // In BASE units: selling one box of twelve takes twelve off
+                // the shelf, not one.
+                $this->stock->recordSale($product, $baseQuantity, $sale->id, $at, $userId);
             }
 
             return $sale->load('items');

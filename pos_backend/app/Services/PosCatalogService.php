@@ -47,7 +47,9 @@ class PosCatalogService {
         foreach ($requested as $entity) {
             [$rows, $entityHasMore, $entityCursor] = match ($entity) {
                 'products' => $this->page(
-                    Product::query()->where('shop_id', $shop->id)->withTrashed(),
+                    Product::query()->where('shop_id', $shop->id)
+                        ->with(['productUnits', 'prices'])
+                        ->withTrashed(),
                     $since, $sinceId, $limit,
                     fn (Product $p) => $this->productArray($p),
                 ),
@@ -165,6 +167,23 @@ class PosCatalogService {
             'currency_id' => $product->currency_id,
             'supplier_id' => null,
             'low_stock_threshold' => $product->low_stock_threshold === null ? null : (float) $product->low_stock_threshold,
+            // Every way this can be sold, with its ratio to the base unit and
+            // its prices. The till needs all of it offline: a cashier picking
+            // "karobka" with no signal still has to be shown the right price.
+            'units' => $product->productUnits->map(fn ($pu) => [
+                'id' => $pu->id,
+                'unit_id' => $pu->unit_id,
+                'numerator' => (int) $pu->base_units_numerator,
+                'denominator' => (int) $pu->base_units_denominator,
+                'is_base' => (bool) $pu->is_base,
+                'is_active' => (bool) $pu->is_active,
+            ])->all(),
+            'prices' => $product->prices->map(fn ($p) => [
+                'product_unit_id' => $p->product_unit_id,
+                'currency_id' => $p->currency_id,
+                'type' => $p->price_type,
+                'amount' => (float) $p->amount,
+            ])->all(),
             'image_url' => $product->image_url,
             'deleted' => $product->deleted_at !== null,
             'updated_at' => $product->updated_at?->toIso8601String(),

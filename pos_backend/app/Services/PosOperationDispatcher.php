@@ -13,6 +13,8 @@ use Pos\Models\Client;
 use Pos\Models\ClientPayment;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
+use Pos\Models\ProductPrice;
+use Pos\Models\ProductUnit;
 use Pos\Models\StockMovement;
 
 /**
@@ -27,6 +29,7 @@ class PosOperationDispatcher {
     public function __construct(
         private readonly PosSaleService $sales,
         private readonly PosStockService $stock,
+        private readonly PosPricingService $pricing,
     ) {}
 
     /** Scope required per operation type — checked here, not at the route. */
@@ -125,6 +128,16 @@ class PosOperationDispatcher {
             'image_url' => $payload['image_url'] ?? null,
         ]);
 
+        // Every product gets a base unit, even a single-unit one: the selling
+        // path resolves units, and a product with none is a special case that
+        // would have to be handled at every call site instead of here once.
+        $this->pricing->ensureBaseUnit($product);
+
+        // Extra units — "1 karobka = 12 dona" — and their prices.
+        foreach ($payload['units'] ?? [] as $extra) {
+            $this->addUnit($product, $extra);
+        }
+
         if ($tracked) {
             // Through the ledger, not into the column: a balance written
             // straight to the cache vanishes the first time it is rebuilt.
@@ -150,6 +163,50 @@ class PosOperationDispatcher {
         $product->save();
 
         return $product;
+    }
+
+    /**
+     * Attach one more way of selling this product, with its prices.
+     *
+     * @param  array<string, mixed>  $spec
+     *
+     * @throws BusinessException
+     */
+    private function addUnit(Product $product, array $spec): ProductUnit {
+        $num = (int) ($spec['numerator'] ?? 1);
+        $den = (int) ($spec['denominator'] ?? 1);
+
+        if ($num <= 0 || $den <= 0) {
+            throw new BusinessException('Birlik nisbati noldan katta bo\'lishi kerak');
+        }
+
+        $unit = ProductUnit::updateOrCreate(
+            ['product_id' => $product->id, 'unit_id' => (int) $spec['unit_id']],
+            [
+                'shop_id' => $product->shop_id,
+                'base_units_numerator' => $num,
+                'base_units_denominator' => $den,
+                'is_base' => $num === 1 && $den === 1 && ($spec['is_base'] ?? false),
+                'is_active' => $spec['is_active'] ?? true,
+            ],
+        );
+
+        foreach ($spec['prices'] ?? [] as $price) {
+            ProductPrice::updateOrCreate(
+                [
+                    'product_unit_id' => $unit->id,
+                    'currency_id' => (int) $price['currency_id'],
+                    'price_type' => $price['type'] ?? ProductPrice::TYPE_SALE,
+                ],
+                [
+                    'shop_id' => $product->shop_id,
+                    'product_id' => $product->id,
+                    'amount' => (float) $price['amount'],
+                ],
+            );
+        }
+
+        return $unit;
     }
 
     /** @throws BusinessException */

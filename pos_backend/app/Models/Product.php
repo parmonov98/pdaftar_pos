@@ -60,6 +60,15 @@ class Product extends Model {
         return $this->hasMany(StockMovement::class);
     }
 
+    /** Every unit this can be sold in. Stock is always counted in the base one. */
+    public function productUnits(): HasMany {
+        return $this->hasMany(ProductUnit::class);
+    }
+
+    public function prices(): HasMany {
+        return $this->hasMany(ProductPrice::class);
+    }
+
     /**
      * What a scanner or a search box found.
      *
