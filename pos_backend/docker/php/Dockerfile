@@ -32,6 +32,20 @@ RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
 # Sessions, cache and queue all run through Redis.
 RUN pecl install redis && docker-php-ext-enable redis
 
+# php-fpm serves requests as www-data, but the application directory is bind
+# mounted from the host and owned by the host user. Those two uids not
+# matching is how this container spent its first day unable to write a single
+# log line: every exception during an HTTP request was dropped silently, and
+# the only entries in storage/logs came from artisan runs as root.
+#
+# Remapping www-data onto the host uid fixes it at the root rather than by
+# chowning storage after each deploy, which only holds until the next command
+# creates a file as root.
+ARG APP_UID=1000
+ARG APP_GID=1000
+RUN groupmod -g "$APP_GID" www-data \
+    && usermod -u "$APP_UID" -g "$APP_GID" www-data
+
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # The repository is mounted, not copied, and its owner on the host is not the

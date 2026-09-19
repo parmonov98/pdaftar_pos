@@ -31,6 +31,7 @@ class PosIntegrityService {
             $this->database(),
             $this->schema(),
             $this->queue(),
+            $this->logging(),
         ];
 
         return [
@@ -104,6 +105,46 @@ class PosIntegrityService {
             return $this->check('queue', true, 'redis javob berdi');
         } catch (Throwable $e) {
             return $this->check('queue', false, $e->getMessage());
+        }
+    }
+
+    /**
+     * The application can actually write its log.
+     *
+     * Checked because the failure is invisible by construction: php-fpm runs
+     * as one user, the bind-mounted directory is owned by another, Laravel
+     * cannot append, and the write it cannot make is the record of what went
+     * wrong. Requests keep answering 500 with an empty log, and the only way
+     * to see the exception is to reproduce it by hand inside the container.
+     * This box ran that way for a day before anyone noticed.
+     */
+    private function logging(): array {
+        try {
+            $dir = storage_path('logs');
+
+            if (! is_dir($dir)) {
+                return $this->check('logging', false, "storage/logs yo'q");
+            }
+
+            if (! is_writable($dir)) {
+                // The running user is named because it is the whole answer:
+                // the directory is fine, the process is simply not the one
+                // that owns it. posix_* is not loaded everywhere, so this
+                // falls back rather than becoming a second failure.
+                $user = function_exists('posix_geteuid') && function_exists('posix_getpwuid')
+                    ? (posix_getpwuid(posix_geteuid())['name'] ?? 'nomalum')
+                    : (get_current_user() ?: 'nomalum');
+
+                return $this->check(
+                    'logging',
+                    false,
+                    "storage/logs yozib bo'lmaydi ({$user} sifatida ishlayapti) — xatolar hech qayerga yozilmaydi",
+                );
+            }
+
+            return $this->check('logging', true, 'storage/logs yoziladi');
+        } catch (Throwable $e) {
+            return $this->check('logging', false, $e->getMessage());
         }
     }
 

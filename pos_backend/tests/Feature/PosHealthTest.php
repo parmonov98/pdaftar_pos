@@ -46,6 +46,18 @@ class PosHealthTest extends TestCase {
         );
     }
 
+    /**
+     * The check that would have caught a whole day of invisible 500s: php-fpm
+     * could not write storage/logs, so every exception was dropped.
+     */
+    public function test_logging_is_checked_and_passes_when_writable(): void {
+        $checks = collect($this->getJson('/api/pos/v1/health')->json('checks'))
+            ->keyBy('name');
+
+        $this->assertArrayHasKey('logging', $checks->all(), "'logging' tekshiruvi yo'q");
+        $this->assertTrue($checks['logging']['ok'], 'logging: '.$checks['logging']['detail']);
+    }
+
     /** Nothing here should ask about pDaftar any more. */
     public function test_no_check_depends_on_pdaftar(): void {
         $names = collect($this->getJson('/api/pos/v1/health')->json('checks'))
