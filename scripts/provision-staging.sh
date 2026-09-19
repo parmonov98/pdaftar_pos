@@ -15,7 +15,7 @@
 #   2. Docker
 #   3. the sibling layout this repo cannot run without (see README)
 #   4. pos_backend/.env, generated, with real random secrets
-#   5. the stack, then the schema
+#   5. the stack and the POS's own schema
 #   6. host nginx + TLS in front of the container on 127.0.0.1:8090
 #
 # It is safe to run again: every step checks before it acts. It does NOT
@@ -128,56 +128,11 @@ step "Bogliqliklar"
 $DOCKER compose exec -T php-pos composer install --no-interaction --prefer-dist --no-dev --optimize-autoloader
 grep -q '^APP_KEY=$' "$ENV_FILE" && $DOCKER compose exec -T php-pos php artisan key:generate --force
 
-# ── pDaftar sxemasi ────────────────────────────────────────────────────────
-# The POS owns exactly two tables. The other ~145 are pDaftar's, and they
-# cannot be created here: pos_backend requires 9 composer packages, pDaftar's
-# migrations assume 34 (Filament, Telescope, Horizon, ...), so running them
-# from this app dies partway through and leaves a half-built schema — which is
-# worse than none, because `migrate` then believes it has run.
-#
-# So the schema arrives as a dump. Structure only by default: a staging till
-# has no business holding real shops' books.
-step "pDaftar sxemasi"
-db_name="$(grep '^DB_DATABASE=' "$ENV_FILE" | cut -d= -f2-)"
-has_shops="$($DOCKER compose exec -T mariadb sh -c \
-    'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" -N -B -e "select count(*) from information_schema.tables where table_schema=\"'"$db_name"'\" and table_name=\"shops\""' 2>/dev/null | tr -d '\r')"
-
-if [ "${has_shops:-0}" = "0" ]; then
-    dump=""
-    for candidate in "$ROOT_DIR/pdaftar-schema.sql.gz" "$ROOT_DIR/pdaftar-schema.sql"; do
-        [ -f "$candidate" ] && { dump="$candidate"; break; }
-    done
-
-    if [ -n "$dump" ]; then
-        echo "   import: $dump"
-        if [ "${dump##*.}" = "gz" ]; then gunzip -c "$dump"; else cat "$dump"; fi \
-            | $DOCKER compose exec -T mariadb sh -c \
-                'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" "'"$db_name"'"' \
-            || die "sxema importi muvaffaqiyatsiz."
-    else
-        # Not fatal, deliberately. Deployment and the schema are separate
-        # decisions: the pipeline can be stood up and proven while how the POS
-        # reaches a pDaftar database is still open. What must NOT pass
-        # silently is the consequence — an empty database is a POS that takes
-        # a sale and writes it nowhere. So it is loud here, pos:health says it
-        # on every deploy, and POS_HEALTH_GATE decides whether it stops one.
-        SCHEMA_MISSING=1
-        printf '\n   \033[33mOGOHLANTIRISH: pDaftar sxemasi yoq.\033[0m\n'
-        cat <<WARN
-   POS ishga tushadi, lekin SOTUV YOZA OLMAYDI. Deploy quvuri baribir ishlaydi.
-
-   Sxema kerak bo'lganda (MA'LUMOTSIZ):
-     ssh devdata 'sudo mysqldump --no-data --single-transaction \
-         --routines --events api_pdaftar_devdata_uz | gzip' > pdaftar-schema.sql.gz
-     scp pdaftar-schema.sql.gz <bu-server>:$ROOT_DIR/
-     ./scripts/provision-staging.sh $DOMAIN
-WARN
-    fi
-else
-    echo "   allaqachon bor"
-fi
-
-# The POS's own two tables, on top of pDaftar's. --force: no TTY here.
+# ── Sxema ──────────────────────────────────────────────────────────────────
+# The POS owns its database outright. pDaftar's ~147 tables are on pDaftar's
+# own server, reached over the API, so nothing here imports or expects them —
+# `migrate` creates the POS's tables and that is the whole schema.
+# --force: no TTY here.
 $DOCKER compose exec -T php-pos php artisan migrate --force
 
 # ── 6. Public name ─────────────────────────────────────────────────────────
@@ -212,29 +167,21 @@ else
 fi
 
 # ── Gate ───────────────────────────────────────────────────────────────────
-step "Yakuniy tekshiruv: pos:health"
-if $DOCKER compose exec -T php-pos php artisan pos:health; then
-    :
-elif [ "${SCHEMA_MISSING:-0}" = "1" ]; then
-    # Expected: there is no pDaftar schema yet, so the checks that read it
-    # cannot pass. Said plainly rather than swallowed.
-    printf '\n\033[33mpos:health xato qaytardi — sxema yoqligi uchun, kutilgan holat.\033[0m\n'
-    printf 'Quvur tayyor; POS sotuv yoza olmaydi.\n'
-else
-    die "pos:health xato qaytardi va buni sxema yoqligi bilan izohlab bolmaydi.
-POSni trafikka qoymang — bu xatolar jimgina buziladi."
-fi
+# pos:health was written for the design where the POS shares pDaftar's
+# database, so most of what it asserts — the shared domain loads, the
+# observers attach, the Redis namespace matches — describes an arrangement
+# this server no longer has. It is run and shown because its output is still
+# the fastest way to see what the POS thinks it is connected to, but it cannot
+# pass here and must not stop provisioning.
+#
+# It stops being advisory when it is rewritten against the API integration.
+# That is what flips POS_HEALTH_GATE to `on`, and a POS taking real sales
+# must not run with it `off`.
+step "Tekshiruv: pos:health (ma'lumot uchun)"
+$DOCKER compose exec -T php-pos php artisan pos:health || true
 
-# The deploy gate, written where the deploy reads it. On by default: a release
-# that breaks the link to pDaftar's domain must stop. Off only while the
-# database question is open, because until then every deploy would fail on the
-# one thing nobody has decided yet.
 if ! grep -q '^POS_HEALTH_GATE=' "$ENV_FILE"; then
-    if [ "${SCHEMA_MISSING:-0}" = "1" ]; then
-        printf '\n# Deploy gate: sxema kelgach `on` qiling\nPOS_HEALTH_GATE=off\n' >> "$ENV_FILE"
-    else
-        printf '\n# Deploy gate\nPOS_HEALTH_GATE=on\n' >> "$ENV_FILE"
-    fi
+    printf '\n# Deploy gate: pos:health API integratsiyasiga moslangach `on`\nPOS_HEALTH_GATE=off\n' >> "$ENV_FILE"
 fi
 
 cat <<DONE
