@@ -145,6 +145,41 @@ class MultiUnitPricingTest extends TestCase {
         $this->assertSame(1, $base->base_units_numerator);
     }
 
+    /**
+     * Units ride inside the product payload, and the pull's cursor is the
+     * product's updated_at. A unit added without touching the parent never
+     * reaches a till that has already synced.
+     */
+    public function test_adding_a_unit_makes_the_product_resync(): void {
+        $before = $this->cola->fresh()->updated_at;
+
+        $this->travel(2)->seconds();
+
+        $token = $this->user->createToken('t', [PosScope::PRODUCTS_WRITE->value]);
+        $terminal = $this->terminal();
+        $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
+
+        $this->withToken($token->plainTextToken)->postJson('/api/pos/v1/products', [
+            'client_operation_id' => (string) Str::uuid(),
+            'name' => 'Fanta',
+            'price' => 11000,
+            'unit_id' => $this->dona->id,
+            'currency_id' => $this->uzs->id,
+            'quantity' => 10,
+            'units' => [[
+                'unit_id' => $this->karobka->id,
+                'numerator' => 6,
+                'denominator' => 1,
+                'prices' => [['currency_id' => $this->uzs->id, 'amount' => 60000]],
+            ]],
+        ])->assertSuccessful();
+
+        $fanta = Product::where('name', 'Fanta')->first();
+        $this->assertCount(2, $fanta->productUnits);
+        // The parent moved, so the cursor will hand it out again.
+        $this->assertTrue($fanta->updated_at->greaterThan($before));
+    }
+
     /** The one that costs money when it is wrong. */
     public function test_selling_one_box_takes_twelve_off_the_shelf(): void {
         $box = $this->boxUnit(12);

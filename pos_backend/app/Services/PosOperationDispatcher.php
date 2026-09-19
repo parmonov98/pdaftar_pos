@@ -191,6 +191,13 @@ class PosOperationDispatcher {
             ],
         );
 
+        // The catalogue pull carries units and prices INSIDE the product
+        // payload, and its cursor is the product's updated_at. Touching the
+        // parent is what makes a new unit reach a till that has already
+        // synced — without it the shop adds a box price and every till goes
+        // on knowing nothing about it.
+        $product->touch();
+
         foreach ($spec['prices'] ?? [] as $price) {
             ProductPrice::updateOrCreate(
                 [

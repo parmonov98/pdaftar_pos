@@ -69,6 +69,21 @@ class PosOperationController extends Controller {
             'quantity' => ['nullable', 'numeric'],
             'low_stock_threshold' => ['nullable', 'numeric', 'min:0'],
             'image_url' => ['nullable', 'string', 'max:512'],
+
+            // Extra ways to sell it — "1 karobka = 12 dona" — with prices.
+            // Listed here because validate() returns only what it was told
+            // about: without these rules the whole array is dropped on the
+            // floor and the product silently arrives with one unit.
+            'units' => ['nullable', 'array', 'max:10'],
+            'units.*.unit_id' => ['required', 'integer', 'exists:units,id'],
+            'units.*.numerator' => ['required', 'integer', 'min:1'],
+            'units.*.denominator' => ['required', 'integer', 'min:1'],
+            'units.*.is_base' => ['nullable', 'boolean'],
+            'units.*.is_active' => ['nullable', 'boolean'],
+            'units.*.prices' => ['nullable', 'array', 'max:20'],
+            'units.*.prices.*.currency_id' => ['required', 'integer', 'exists:currencies,id'],
+            'units.*.prices.*.amount' => ['required', 'numeric', 'min:0'],
+            'units.*.prices.*.type' => ['nullable', 'string', 'in:sale,credit'],
         ]);
     }
 
