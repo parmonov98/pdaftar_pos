@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Pos\Models;
 
-use App\Models\PersonalAccessToken;
-use App\Models\Shop;
-use App\Models\User;
+use Pos\Models\PersonalAccessToken;
+use Pos\Models\Shop;
+use Pos\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;

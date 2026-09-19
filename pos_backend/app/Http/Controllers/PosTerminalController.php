@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Pos\Http\Controllers;
 
-use App\Exceptions\Custom\BusinessException;
-use App\Http\Controllers\Controller;
-use App\Models\Shop;
-use App\Models\User;
+use Pos\Exceptions\BusinessException;
+use Illuminate\Routing\Controller;
+use Pos\Models\Shop;
+use Pos\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;

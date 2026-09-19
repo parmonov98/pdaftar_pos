@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Pos\Providers;
 
 use App\Models\Debt;
-use App\Models\PersonalAccessToken;
+use Pos\Models\PersonalAccessToken;
 use App\Models\Repayment;
 use App\Models\SupplierTransaction;
 use App\Observers\DebtObserver;

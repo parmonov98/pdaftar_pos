@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Pos\Services;
 
-use App\Exceptions\Custom\BusinessException;
-use App\Models\Shop;
-use App\Models\User;
-use App\Models\UserShop;
+use Pos\Exceptions\BusinessException;
+use Pos\Models\Shop;
+use Pos\Models\User;
+use Pos\Models\UserShop;
 use Illuminate\Support\Facades\DB;
 use Pos\Constants\PosProvider;
 use Pos\Constants\PosScope;

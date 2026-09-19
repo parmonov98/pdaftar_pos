@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
 use Pos\Constants\PosScope;
+use Pos\Http\Controllers\AuthController;
 use Pos\Http\Controllers\PosHealthController;
 use Pos\Http\Controllers\PosOperationController;
 use Pos\Http\Controllers\PosSaleHistoryController;
@@ -40,7 +41,23 @@ use Pos\Http\Controllers\PosTerminalController;
  */
 Route::get('/health', PosHealthController::class)->name('pos.health');
 
+/*
+ * Signing in to the POS itself.
+ *
+ * Unauthenticated because they are how a client gets its first credential.
+ * Both are rate limited inside AuthController, by phone and by IP.
+ *
+ * These exist because the POS now has its own users: the till used to post to
+ * pDaftar's /api/mobile/login, which is not a route this application has and,
+ * on a separate database, could not have been validated if it were.
+ */
+Route::post('/auth/register', [AuthController::class, 'register'])->name('pos.auth.register');
+Route::post('/auth/login', [AuthController::class, 'login'])->name('pos.auth.login');
+
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/auth/me', [AuthController::class, 'me'])->name('pos.auth.me');
+    Route::post('/auth/logout', [AuthController::class, 'logout'])->name('pos.auth.logout');
+
     // Stage 1 — the only endpoints an un-provisioned client can reach.
     //
     // The manage pair is here, on the USER token, and not behind
