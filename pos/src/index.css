@@ -932,3 +932,66 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
     background: color-mix(in srgb, var(--accent) 16%, transparent);
   }
 }
+
+
+/* ─── List views on a phone ───────────────────────────────────────────────
+   The head is a single nowrap row of title + search + filters + an action.
+   At 375pt that overflowed the screen: the search box was squeezed to 26px,
+   the "+ Yangi mahsulot" button was cut off at the edge, and the whole page
+   scrolled sideways — which on a till reads as a broken app rather than a
+   narrow one. It wraps now, and the search takes its own full-width line
+   because a 26px search box is not a search box. */
+@media (max-width: 700px) {
+  .view-head {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 12px 14px;
+  }
+
+  .view-head h2 { font-size: 17px; }
+
+  /* Ahead of the buttons, and on its own line. */
+  .view-head input { order: 10; flex: 1 0 100%; min-width: 0; }
+
+  /* The spacer pushes things apart on a desktop row; wrapped, it only
+     forces a line break in the wrong place. */
+  .view-head .spacer { display: none; }
+
+  .view-head button { flex: 1 1 auto; }
+
+  .view-summary { padding: 9px 14px; }
+  .view-body { padding: 10px 14px 20px; }
+  .view .notice { margin: 10px 14px 0; }
+
+  /* Amount and quantity columns reserved 110px and 70px for a desktop
+     table. Stacked beside a wrapping name on a phone that is most of the
+     row, so the name — the thing being read — gets what is left. */
+  .list-row { padding: 11px 4px; gap: 8px; }
+  .list-row .amt { min-width: 0; }
+  .list-row .qty { min-width: 0; }
+}
+
+
+/* Quantity steppers. Hidden where a keyboard does the job — a counter till
+   has + and − on real keys, and two extra buttons per row would only crowd
+   the column the cashier reads. Shown on touch, where there are none. */
+.step-btn { display: none; }
+
+@media (max-width: 700px), (pointer: coarse) {
+  .step-btn {
+    display: flex; align-items: center; justify-content: center;
+    /* 40pt: below this a thumb starts hitting the input beside it, and a
+       mis-tap here changes what the customer is charged. */
+    min-width: 40px; min-height: 40px;
+    flex: 0 0 auto;
+    border: none; border-right: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text);
+    font-size: 19px; line-height: 1; cursor: pointer;
+  }
+
+  .stepper .step-btn:last-of-type { border-right: none; border-left: 1px solid var(--line); }
+  .stepper .step-btn:active { background: var(--accent); color: #fff; }
+
+  /* The number keeps the middle and shrinks instead of the buttons. */
+  .cart-row .stepper input { min-width: 0; text-align: center; }
+}

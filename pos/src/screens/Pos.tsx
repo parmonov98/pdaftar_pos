@@ -752,6 +752,30 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
                     <div className="cell c">
                       <div className="stepper">
+                        {/* Touch only. On a desktop till + and − are keys;
+                            on a phone there are none, so going from 1 to 3
+                            meant selecting the field and retyping it — the
+                            most common edit on the screen, made the fiddliest.
+                            Floors at 1 like the keyboard does: removing a line
+                            is the ✕, and a row that vanished under a repeated
+                            tap is a sale quietly short an item. */}
+                        <button
+                          type="button"
+                          className="step-btn"
+                          aria-label="Kamaytirish"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            mutateLines((lines) =>
+                              lines.map((l) =>
+                                l.productId === line.product.id
+                                  ? { ...l, quantity: Math.max(1, round2(l.quantity - 1)) }
+                                  : l,
+                              ),
+                            )
+                          }}
+                        >
+                          −
+                        </button>
                         <input
                           type="number"
                           min="0.01"
@@ -771,6 +795,23 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                             label; one sold by the box AND the bottle gets a
                             picker, because which one is being sold changes
                             both the price and how much stock leaves. */}
+                        <button
+                          type="button"
+                          className="step-btn"
+                          aria-label="Ko'paytirish"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            mutateLines((lines) =>
+                              lines.map((l) =>
+                                l.productId === line.product.id
+                                  ? { ...l, quantity: round2(l.quantity + 1) }
+                                  : l,
+                              ),
+                            )
+                          }}
+                        >
+                          +
+                        </button>
                         {(line.product.units?.length ?? 0) > 1 ? (
                           <select
                             className="unit-select"
