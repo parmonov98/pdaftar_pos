@@ -19,6 +19,7 @@ import { Clients, Products } from './Catalog'
 import { Devices } from './Devices'
 import { Drawer, type View } from './Drawer'
 import { History } from './History'
+import { ProductBrowser } from './ProductBrowser'
 import { ProductSearch } from './ProductSearch'
 import { Queue } from './Queue'
 import { ReceiptView } from './Receipt'
@@ -44,6 +45,8 @@ const QUICK_DISCOUNTS = [5, 10, 15, 20]
  * catalogue is reached by typing or scanning, and lives in the drawer for the
  * times someone genuinely wants to browse it.
  */
+const SPLIT_KEY = 'pos.split_dir'
+
 export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) {
   const shopCurrency = me.shop.currency_id ?? 1
 
@@ -66,6 +69,37 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   /** Undo stacks, kept per tab so switching does not lose a tab's history. */
   const undoStacks = useRef<Map<string, DraftLine[][]>>(new Map())
   const [undoDepth, setUndoDepth] = useState(0)
+
+  /*
+   * Two panes, and which of them owns the keyboard.
+   *
+   * The orientation is the cashier's choice because the hardware is not ours
+   * to predict: a 1920-wide monoblok wants the list beside the basket, a
+   * 1024x768 one stacked. Remembered per device — it is a property of the
+   * counter, not of the account.
+   */
+  const [splitDir, setSplitDir] = useState<'vertical' | 'horizontal'>(() => {
+    try {
+      return localStorage.getItem(SPLIT_KEY) === 'horizontal' ? 'horizontal' : 'vertical'
+    } catch {
+      return 'vertical'
+    }
+  })
+  const [pane, setPane] = useState<'browser' | 'cart'>('browser')
+  const [cartCursor, setCartCursor] = useState(0)
+  const cartPaneRef = useRef<HTMLDivElement>(null)
+
+  function flipSplit() {
+    setSplitDir((d) => {
+      const next = d === 'vertical' ? 'horizontal' : 'vertical'
+      try {
+        localStorage.setItem(SPLIT_KEY, next)
+      } catch {
+        // A till with storage blocked still splits, it just forgets.
+      }
+      return next
+    })
+  }
 
   const drafts = useLiveQuery(() => db.drafts.orderBy('createdAt').toArray(), [], [] as SaleDraft[])
   const products = useLiveQuery(() => db.products.toArray(), [], [] as Product[])
@@ -223,6 +257,115 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       }
     })
   }, [active, productsById])
+
+  /*
+   * The whole sale, on the keyboard.
+   *
+   * A till frequently has no mouse, and where it has one a cashier with a
+   * queue does not reach for it: the hand is on the keys or the scanner.
+   * Function keys rather than letter chords, because the scanner types
+   * letters — a barcode containing "p" must not fire a shortcut.
+   *
+   *   F3        find a product
+   *   F4        take payment
+   *   F8        flip the split
+   *   Tab       move between the two panes
+   *   ↑ ↓       move in the focused pane
+   *   Enter     add the highlighted product / edit the highlighted line
+   *   + −       change the highlighted line's quantity
+   *   Delete    remove the line
+   *   Esc       clear, then step back
+   */
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      // Never steal a key from a dialog: the checkout has its own Enter.
+      if (checkout) return
+
+      const target = event.target as HTMLElement | null
+      const typing = target?.tagName === 'INPUT' || target?.tagName === 'SELECT' || target?.tagName === 'TEXTAREA'
+
+      if (event.key === 'F3') {
+        event.preventDefault()
+        setPane('browser')
+        return
+      }
+
+      if (event.key === 'F4') {
+        event.preventDefault()
+        if (cart.length > 0) setCheckout(true)
+        return
+      }
+
+      if (event.key === 'F8') {
+        event.preventDefault()
+        flipSplit()
+        return
+      }
+
+      if (event.key === 'Tab' && pane === 'cart' && !typing) {
+        event.preventDefault()
+        setPane('browser')
+        return
+      }
+
+      // Everything below belongs to the cart, and only while it has focus.
+      if (pane !== 'cart' || typing) return
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setCartCursor((c) => Math.min(c + 1, cart.length - 1))
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setCartCursor((c) => Math.max(c - 1, 0))
+        return
+      }
+
+      const line = cart[cartCursor]
+      if (!line) return
+
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        mutateLines((lines) =>
+          lines.map((l) => (l.productId === line.product.id ? { ...l, quantity: l.quantity + 1 } : l)),
+        )
+        return
+      }
+
+      if (event.key === '-') {
+        event.preventDefault()
+        // Down to one, not to zero: removing is Delete, and a line that
+        // vanished because the key repeated is a sale quietly short an item.
+        mutateLines((lines) =>
+          lines.map((l) =>
+            l.productId === line.product.id ? { ...l, quantity: Math.max(1, l.quantity - 1) } : l,
+          ),
+        )
+        return
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+        mutateLines((lines) => lines.filter((l) => l.productId !== line.product.id))
+        setCartCursor((c) => Math.max(0, Math.min(c, cart.length - 2)))
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // mutateLines is redefined every render, so it is deliberately not a
+    // dependency — the effect re-subscribes often enough on the state it does
+    // list, and each run closes over a current copy.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkout, pane, cart, cartCursor])
+
+  // A line removed under the cursor must not leave it pointing past the end.
+  useEffect(() => {
+    setCartCursor((c) => Math.max(0, Math.min(c, cart.length - 1)))
+  }, [cart.length])
+
 
   const subtotal = cartSubtotal(cart)
 
@@ -430,6 +573,24 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               </div>
             )}
 
+            <div className={`split ${splitDir}`}>
+              <div className="split-pane">
+                <ProductBrowser
+                  products={products}
+                  focused={pane === 'browser'}
+                  onPick={(product) => {
+                    mutateLines((lines) => addLine(lines, product))
+                    say('ok', `${product.name} qo'shildi`)
+                  }}
+                  onLeave={() => setPane('cart')}
+                />
+              </div>
+
+              <div
+                className={`split-pane cart-pane ${pane === 'cart' ? 'focused' : ''}`}
+                tabIndex={-1}
+                ref={cartPaneRef}
+              >
             <div className="cart-head-row">
               <span>MAHSULOT</span>
               <span className="c">MIQDORI</span>
@@ -448,12 +609,19 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                 </div>
               )}
 
-              {cart.map((line) => {
+              {cart.map((line, index) => {
                 const stock = line.product.quantity
                 const oversell = stock !== null && line.quantity > stock
 
                 return (
-                  <div className="cart-row" key={line.product.id}>
+                  <div
+                    className={`cart-row ${pane === 'cart' && index === cartCursor ? 'on' : ''}`}
+                    key={line.product.id}
+                    onClick={() => {
+                      setPane('cart')
+                      setCartCursor(index)
+                    }}
+                  >
                     <div className="cell name">
                       <div className="nm">{line.product.name}</div>
                       <div className="sub">
@@ -526,6 +694,21 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                   </div>
                 )
               })}
+            </div>
+              </div>
+            </div>
+
+            {/* Written down because a keyboard-only flow that nobody is told
+                about is a keyboard-only flow nobody uses. */}
+            <div className="keyhelp">
+              <span><kbd>F3</kbd>qidirish</span>
+              <span><kbd>↑↓</kbd>tanlash</span>
+              <span><kbd>Enter</kbd>qo'shish</span>
+              <span><kbd>Tab</kbd>panel</span>
+              <span><kbd>+</kbd><kbd>−</kbd>miqdor</span>
+              <span><kbd>Del</kbd>o'chirish</span>
+              <span><kbd>F4</kbd>to'lov</span>
+              <span><kbd>F8</kbd>{splitDir === 'vertical' ? 'yuqori/past' : 'yonma-yon'}</span>
             </div>
           </div>
 

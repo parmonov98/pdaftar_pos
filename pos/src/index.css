@@ -694,3 +694,59 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .tappable { cursor: pointer; }
 .tappable:hover { background: var(--panel-2); }
 .tappable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ═══ Sotuv ekranining ikki paneli ═══
+   The product list and the basket, side by side or stacked. Which one is the
+   cashier's choice (F8): a wide monoblok wants them beside each other, a
+   1024x768 one above and below. */
+.split { display: grid; flex: 1; min-height: 0; gap: 1px; background: var(--line); }
+.split.vertical { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+.split.horizontal { grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); }
+.split-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg); }
+
+/* On a phone there is no room for two panes at once; the basket is the one
+   that matters, and the list is reachable through search. */
+@media (max-width: 700px) {
+  .split { display: flex; flex-direction: column; }
+  .split > .split-pane:first-child { display: none; }
+}
+
+/* Which pane the keyboard is talking to. Without this a cashier pressing ↑
+   has no way to know what will move. */
+.split-pane.focused, .browser.focused { box-shadow: inset 2px 0 0 var(--accent); }
+
+.browser { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.browser-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.browser-head input { flex: 1; }
+.browser-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.browser-list { flex: 1; overflow-y: auto; }
+
+.browser-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 72px 96px;
+  align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border: none; border-bottom: 1px solid var(--line-soft, var(--line));
+  background: none; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+}
+.browser-row .nm { display: block; font-weight: 600; font-size: 14px; }
+.browser-row .sub { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.browser-qty { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.browser-qty.out { color: var(--danger-text); }
+.browser-price { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+/* The keyboard cursor, not a hover state — it has to be visible while the
+   hand is nowhere near the mouse. */
+.browser-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Same idea in the basket. */
+.cart-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+
+.keyhelp {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  padding: 6px 12px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted);
+}
+.keyhelp kbd {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 5px; margin-right: 4px;
+}
+@media (max-width: 700px) { .keyhelp { display: none; } }
