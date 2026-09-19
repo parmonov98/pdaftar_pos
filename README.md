@@ -4,31 +4,22 @@ Kassa tizimi — backend va frontend bitta repoda.
 
 ```
 pdaftar_pos/
-  pos_backend/   POS Integration API (Laravel)   → :8090
-  pos/           Kassa ilovasi (React, offline)  → :5174
+  pos_backend/   POS API (Laravel)              → :8090
+  pos/           Kassa ilovasi (React, offline) → :5174
 ```
 
-## ⚠️ Bu repo yolg'iz ishlamaydi
+## Mustaqil mahsulot
 
-`pos_backend` pDaftarning **o'z domen kodini** ishlatadi — nusxasini emas.
-`composer.json` da:
+POS o'z serverida, o'z bazasida, o'z domenida ishlaydi. pDaftar bilan
+integratsiya **API orqali** bo'ladi — kod darajasida hech qanday bog'liqlik yo'q.
 
-```json
-"App\\": "../../backend/app/"
-```
+Ilgari bunday emas edi: `composer.json` `App\` ni `../../backend/app/` ga
+ulardi, ya'ni POS sotuvni pDaftarning **o'z** `StoreDebtUseCase`i orqali
+yozardi. Buning uchun `pdaftar.backend` shu repo yonida turishi **shart** edi.
+Endi shart emas — klon qiling va ishga tushiring.
 
-Ya'ni POS sotuvi pDaftarning **o'z** `StoreDebtUseCase`i orqali yoziladi. Shuning
-uchun POS sotuvi va ilova sotuvi bazada farq qilmaydi va bir-biridan uzoqlashib
-keta olmaydi. Agar bu fayllar nusxalanganida, bitta bazaga ikki xil sotuv qoidasi
-yozardi va pDaftar sotuv oqimini birinchi marta o'zgartirganda ikkisi **jimgina**
-farq qila boshlardi.
-
-Buning narxi: **`pdaftar.backend` shu repo yonida turishi shart.**
-
-```
-parent/
-  backend/       ← git clone git@github.com:parmonov98/pdaftar.backend.git backend
-  pdaftar_pos/   ← shu repo
+```bash
+./scripts/setup.sh
 ```
 
 Tekshirish:
@@ -38,132 +29,78 @@ cd pos_backend
 docker compose exec php-pos php artisan pos:health
 ```
 
-Yo'q bo'lsa aniq aytadi: `Topilmadi: App\Models\Debt … pdaftar.backend shu repo
-yonida (sibling) turibdimi?`
-
 ## Ishga tushirish
 
-Yangi klonda bitta buyruq yetarli — u yuqoridagi sibling'ni ham o'zi klon qiladi:
-
 ```bash
-./scripts/setup.sh
-```
-
-Skript takror ishga tushirishga xavfsiz: har bir qadam avval tekshiradi.
-Docker'siz, faqat bog'liqliklarni o'rnatish uchun `./scripts/setup.sh --no-docker`.
-
-Qo'lda qilmoqchi bo'lsangiz:
-
-```bash
-# 1. pDaftar backendi (baza va Redis shundan)
-cd ../backend && docker compose up -d
-
-# 2. POS backendi
-cd ../pdaftar_pos/pos_backend && docker compose up -d
-docker compose exec php-pos php artisan pos:health
-
-# 3. Kassa ilovasi
+cd pos_backend && docker compose up -d     # php, nginx, mariadb, redis
+docker compose exec -T php-pos php artisan migrate
 cd ../pos && npm install && npm run dev
 ```
 
 | | |
 |---|---|
 | Kassa | http://localhost:5174 |
-| POS API | http://localhost:8090/api/pos/v1 |
+| API | http://localhost:8090/api/pos/v1 |
 | Health | http://localhost:8090/api/pos/v1/health |
-| Swagger | http://localhost:8090/api/documentation/pos |
 
-## Asosiy g'oyalar
+## Hisob ochish
 
-**Bitta baza.** POS pDaftarning bazasiga yozadi. O'z buxgalteriyasi yo'q.
+POS o'z foydalanuvchilariga ega. pDaftar hisobi kerak emas:
 
-**Naqd sotuv → Kassa, nasiya → qarz.** pDaftarning Sotuvi optomchilar kalkulyatori:
-naqd bo'lsa saqlanmaydi, saqlangani nasiya. POS'da oddiy sotuv ham bor, u
-`shop_incomes`ga kirim bo'lib tushadi. Nasiya esa `debts`ga — pDaftarning o'z
-`StoreDebtUseCase`i orqali.
+```bash
+curl -X POST http://localhost:8090/api/pos/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Anvar","phone_number":"+998901234567","password":"kassa12345","shop_name":"Anvar Market"}'
+```
 
-**Oflayn.** Har bir yozuv avval brauzer bazasidagi navbatga tushadi, keyin
-yuboriladi — internet bor bo'lsa ham. Har amalda `client_operation_id` (UUID)
-bo'ladi, shuning uchun takroriy yuborish ikkinchi sotuv yaratmaydi.
+Ro'yxatdan o'tish bitta qadamda foydalanuvchi va uning birinchi do'konini
+yaratadi — do'koni yo'q hisob kassa ocha olmaydi, ya'ni umuman hech nima qila
+olmaydi.
 
-**Qoldiq.** Har doim serverdagi `stock_movements` ledgeridan. Kassa uni faqat
-ko'rsatadi. Qoldiq yetmasa sotuv **bloklanmaydi** — tovar allaqachon berilgan.
+## Nima bor, nima yo'q
 
-Batafsil: [`pos_backend/README.md`](pos_backend/README.md) va [`pos/README.md`](pos/README.md).
+Ishlaydi:
+
+- ro'yxatdan o'tish, kirish, chiqish (`/auth/*`)
+- kassa (terminal) ro'yxatdan o'tkazish va boshqarish (`/terminals/*`)
+- health (`/health`)
+
+Hali yo'q — **sotuv oqimi**. `/sales`, `/sync/pull`, `/sync/push`, `/products`,
+`/clients`, `/deliveries`, `/stock`, `/cash` route'lari olib tashlandi. Ular
+pDaftarning domen kodi ustidagi yupqa qatlam edi: sotuvni `StoreDebtUseCase`
+yozardi, qoldiqni `StockService` ko'chirardi, pulni `DebtObserver` Kassaga
+o'tkazardi. POS o'z bazasida ishlaganda bu klasslar mavjud bo'lmagan
+jadvallarni o'qiydi.
+
+Ular 500 qaytarib turgandan ko'ra o'chirildi: mavjud, lekin yiqiladigan route
+klientni qayta urinishga o'rgatadi; yo'q route esa rostini aytadi. Har biri
+POSning **o'z** mahsulot, mijoz va sotuv modeli ustida qaytadi.
 
 ## Deploy
 
-Ikkalasi **birga** chiqariladi — umumiy domen o'zgarsa POS ham u bilan yangilanishi
-kerak. Deploy skriptida:
+`main` ga push → GitHub Actions → staging server.
 
-```bash
-git pull && php artisan pos:health && systemctl reload php-fpm
-```
-
-`pos:health` xato bo'lsa exit kodi 1 qaytaradi, shuning uchun reliz to'xtaydi.
-
-## Deploy: pos.pdaftar.uz (devdata)
-
-POS devdata serverida **alohida servis** sifatida turadi: o'z domeni, o'z
-konteynerlari, o'z porti (8090), o'z hayot sikli. POS o'chsa yoki buzilsa,
-`api.pdaftar.devdata.uz` ishlayveradi — ajratishning asl sababi shu.
-
-Serverda, POS checkout ichidan:
-
-```bash
-./scripts/deploy-devdata.sh
-```
-
-Skript relizni `pos:health` ustida to'xtatadi. Undan oldin ikki narsani
-tekshiradi — ikkalasi ham `docker compose up` ni tushunarsiz xato bilan
-yiqitadi, `pos:health` esa ularni ushlay olmaydi (konteyner umuman ishga
-tushmaydi):
-
-| Tekshiruv | Nega |
+| | |
 |---|---|
-| `backend/.env` da `COMPOSE_PROJECT_NAME=pdaftar_dev` | `pdaftar_dev-php` obrazi va `pdaftar_dev_network` tarmog'i shu nomdan yasaladi |
-| `pdaftar.backend` yonma-yon turibdimi | `App\` → `../../backend/app/` |
+| Server | `pos-staging` (Linode, eu-central, 2GB) |
+| Domen | https://pos.pdaftar.uz |
+| Workflow | `.github/workflows/deploy-staging.yml` |
 
-Birinchi deploydan oldin:
+Kassa cloud runner'da yig'iladi (2GB serverda `vite build` OOM bo'ladi), keyin
+`dist/` rsync qilinadi va `scripts/deploy-staging.sh` ishga tushadi.
+
+Yangi serverni noldan tayyorlash:
 
 ```bash
-cp pos_backend/.env.devdata.example pos_backend/.env   # ikkita sirni to'ldiring
-sudo cp deploy/nginx/pos.pdaftar.uz.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/pos.pdaftar.uz.conf /etc/nginx/sites-enabled/
-sudo certbot --nginx -d pos.pdaftar.uz
-sudo nginx -t && sudo systemctl reload nginx
+./scripts/provision-staging.sh pos.pdaftar.uz
 ```
 
-`.env` dagi eng nozik qator — `REDIS_PREFIX`. U APP_NAME dan **olinmaydi**,
-qo'lda `pdaftar_database_` qilib qo'yiladi: aks holda balans joblari pDaftar
-horizoni qaramaydigan navbatga tushadi va hech qanday xato chiqmaydi.
+Swap, Docker, kod, `.env`, konteynerlar, migratsiya, nginx va TLS — hammasi.
+Qayta ishga tushirish xavfsiz.
 
-## CI
+## Testlar
 
-`.github/workflows/ci.yml` har PR'da uch ishni bajaradi:
-
-| Ish | Nima qiladi | pdaftar.backend kerakmi |
-|---|---|---|
-| `pos` | oxlint + `tsc` + vite build | yo'q |
-| `pos_backend (pint)` | `pint --test app routes database` | yo'q |
-| `pos_backend (phpunit)` | sibling'ni klon qilib, testlarni chopadi | **ha** |
-
-Uchinchisi pdaftar.backend'ni o'qiy oladigan PAT'ni `PDAFTAR_BACKEND_TOKEN`
-repo secret'idan oladi. Secret yo'q bo'lsa, ish **qizarmaydi — o'tkazib
-yuboriladi**: fork'dan kelgan PR o'zida bo'lishi mumkin bo'lmagan secret uchun
-qizarmasligi kerak.
-
-Testlar `PosIntegrityService`ning CI javob bera oladigan ikki tekshiruvini
-qat'iy talab qiladi: `shared_domain` va `observers`. Qolgan to'rttasi tirik
-pDaftar bazasi va Redis'ini talab qiladi, shuning uchun to'liq `pos:health`
-alohida, **majburiy bo'lmagan** qadam sifatida chiqadi.
-
-## Claude Code on the web
-
-`.claude/hooks/session-start.sh` veb-sessiya konteynerini tayyorlaydi:
-pdaftar.backend'ni yonma-yon klon qiladi, `composer install` va `npm install`
-qiladi, so'ng `pos:health`ni chop etadi.
-
-Sessiya muhiti manbalariga **`parmonov98/pdaftar.backend` ham qo'shilgan
-bo'lishi kerak** — aks holda klon qadamida ogohlantirish chiqadi va POS backend
-ishga tushmaydi (Kassa ilovasi esa ishlayveradi).
+```bash
+cd pos_backend && ./vendor/bin/phpunit
+cd pos && npm run lint && npm run build
+```

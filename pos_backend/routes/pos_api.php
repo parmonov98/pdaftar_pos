@@ -3,12 +3,8 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
-use Pos\Constants\PosScope;
 use Pos\Http\Controllers\AuthController;
 use Pos\Http\Controllers\PosHealthController;
-use Pos\Http\Controllers\PosOperationController;
-use Pos\Http\Controllers\PosSaleHistoryController;
-use Pos\Http\Controllers\PosSyncController;
 use Pos\Http\Controllers\PosTerminalController;
 
 /*
@@ -82,52 +78,18 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereNumber('terminal')
             ->name('pos.terminals.destroy');
 
-        // ─── Read ───
-        Route::middleware('pos.scope:'.PosScope::CATALOG_READ->value)->group(function () {
-            // Declared before the '/sales' POST group below so the literal
-            // '/sales/recent' path is never shadowed.
-            Route::get('/sales/recent', [PosSaleHistoryController::class, 'recent'])
-                ->name('pos.sales.recent');
-            Route::get('/sync/pull', [PosSyncController::class, 'pull'])->name('pos.sync.pull');
-            Route::get('/sync/status', [PosSyncController::class, 'status'])->name('pos.sync.status');
-            Route::get('/products/lookup', [PosSyncController::class, 'lookup'])->name('pos.products.lookup');
-        });
-
-        // ─── Offline queue ───
-        // No single scope guards this route: a batch may carry sale.create and
-        // stock.movement together, so the check belongs per operation, inside
-        // the dispatcher.
-        Route::post('/sync/push', [PosSyncController::class, 'push'])->name('pos.sync.push');
-
-        // ─── Single-operation writes ───
-        Route::middleware('pos.scope:'.PosScope::SALES_WRITE->value)->group(function () {
-            Route::post('/sales', [PosOperationController::class, 'sale'])->name('pos.sales.store');
-            Route::post('/sales/cancel', [PosOperationController::class, 'cancelSale'])->name('pos.sales.cancel');
-        });
-
-        Route::middleware('pos.scope:'.PosScope::PRODUCTS_WRITE->value)->group(function () {
-            Route::post('/products', [PosOperationController::class, 'createProduct'])->name('pos.products.store');
-            Route::patch('/products', [PosOperationController::class, 'updateProduct'])->name('pos.products.update');
-        });
-
-        Route::middleware('pos.scope:'.PosScope::CLIENTS_WRITE->value)
-            ->post('/clients', [PosOperationController::class, 'createClient'])
-            ->name('pos.clients.store');
-
-        Route::middleware('pos.scope:'.PosScope::SUPPLIERS_WRITE->value)->group(function () {
-            Route::post('/suppliers', [PosOperationController::class, 'createSupplier'])->name('pos.suppliers.store');
-            Route::post('/suppliers/transactions', [PosOperationController::class, 'supplierTransaction'])
-                ->name('pos.suppliers.transactions.store');
-        });
-
-        Route::middleware('pos.scope:'.PosScope::STOCK_WRITE->value)->group(function () {
-            Route::post('/deliveries', [PosOperationController::class, 'createDelivery'])->name('pos.deliveries.store');
-            Route::post('/stock/movements', [PosOperationController::class, 'stockMovement'])->name('pos.stock.movements.store');
-        });
-
-        Route::middleware('pos.scope:'.PosScope::CASH_WRITE->value)->group(function () {
-            Route::post('/cash/income', [PosOperationController::class, 'cashIncome'])->name('pos.cash.income');
-            Route::post('/cash/expense', [PosOperationController::class, 'cashExpense'])->name('pos.cash.expense');
-        });
+        // ─── Selling ───
+        //
+        // Nothing here yet, and that is the honest state of it. These routes
+        // existed — /sales, /sync/pull, /sync/push, /products, /clients,
+        // /deliveries, /stock, /cash — but every one was a thin wrapper over
+        // pDaftar's domain: StoreDebtUseCase wrote the sale, StockService
+        // moved the stock, DebtObserver mirrored the cash. On the POS's own
+        // database those classes read tables that are not there.
+        //
+        // They were removed rather than left to 500. A route that exists and
+        // fails teaches a client to retry; a route that is absent tells it the
+        // truth. They come back one at a time, on the POS's own products,
+        // clients and sales, each with the terminal scope it already had.
     });
 });

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Pos\Services;
 
-use App\Exceptions\Custom\BusinessException;
-use App\Exceptions\Custom\InsufficientStockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Pos\Exceptions\BusinessException;
+use Pos\Exceptions\InsufficientStockException;
 use Pos\Models\PosOperation;
 use Pos\Models\PosTerminal;
 use Symfony\Component\HttpKernel\Exception\HttpException;

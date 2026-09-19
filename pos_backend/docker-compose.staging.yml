@@ -12,8 +12,8 @@
 #
 #   docker compose -f docker-compose.staging.yml up -d
 #
-# The staging database is a COPY of pDaftar's schema, not pDaftar's live books.
-# A sale rung up here must never land in the real ledger.
+# The database is the POS's own and starts empty: `php artisan migrate` builds
+# the whole of it. Nothing here is copied from pDaftar.
 
 name: pos_staging
 
@@ -23,7 +23,7 @@ services:
         # checkout to have built it earlier. Same Dockerfile as pDaftar's own
         # php container, so the PHP version and extension set cannot drift.
         build:
-            context: ../../backend/docker/php
+            context: ./docker/php
         image: pos_staging-php
         container_name: pos-php
         restart: unless-stopped
@@ -31,11 +31,11 @@ services:
         environment:
             - COMPOSER_ALLOW_SUPERUSER=1
         volumes:
-            # The GRANDparent, exactly as in docker-compose.yml: the shared
-            # domain lives in the sibling checkout and this app cannot boot
-            # without it.
+            # Just this repository. It used to mount the GRANDparent so the
+            # sibling pdaftar.backend checkout came with it; the POS no longer
+            # has anything to read there.
             - ../..:/var/www
-            - ../../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+            - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
         depends_on:
             mariadb:
                 condition: service_healthy

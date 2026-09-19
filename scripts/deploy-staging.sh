@@ -20,7 +20,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND="$(dirname "$ROOT")/backend"
 PULL=1
 REF=""
 
@@ -40,13 +39,6 @@ die()  { printf "\n\033[31mTOXTATILDI: %s\033[0m\n" "$*" >&2; exit 1; }
 # ── Preflight ──────────────────────────────────────────────────────────────
 step "Tekshiruv"
 
-[ -f "$BACKEND/bootstrap/helpers.php" ] \
-    || die "$BACKEND topilmadi. pdaftar.backend shu repo yonida turishi shart —
-POS sotuvni pDaftarning OZ domen kodi orqali yozadi:
-    /var/www/pos/
-      backend/       <- pdaftar.backend
-      pdaftar_pos/   <- shu repo"
-
 [ -f "$ROOT/pos_backend/.env" ] \
     || die "pos_backend/.env yoq. Avval: ./scripts/provision-staging.sh <domain>"
 
@@ -65,12 +57,8 @@ if [ "$PULL" -eq 1 ]; then
         git -C "$ROOT" checkout main
         git -C "$ROOT" merge --ff-only origin/main
     fi
-    # The shared domain is half the application; a POS pinned to a stale
-    # pDaftar writes sales through last month's rules.
-    git -C "$BACKEND" fetch origin --prune && git -C "$BACKEND" merge --ff-only origin/main
 fi
-echo "   pos     $(git -C "$ROOT" rev-parse --short HEAD)"
-echo "   backend $(git -C "$BACKEND" rev-parse --short HEAD)"
+echo "   pos $(git -C "$ROOT" rev-parse --short HEAD)"
 
 # ── Backend ────────────────────────────────────────────────────────────────
 step "POS backend"

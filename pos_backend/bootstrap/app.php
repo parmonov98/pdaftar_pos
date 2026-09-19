@@ -1,6 +1,6 @@
 <?php
 
-use App\Exceptions\Custom\BusinessException;
+use Pos\Exceptions\BusinessException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;

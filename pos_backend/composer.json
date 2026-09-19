@@ -1,21 +1,13 @@
 {
     "$comment": [
-        "pDaftar POS — a monorepo holding the POS backend and the till frontend.",
+        "pDaftar POS backend.",
         "",
-        "The key line is the `App\\` autoload mapping below. It points at pDaftar's",
-        "backend, NOT at a copy, so a POS sale is written by pDaftar's own",
-        "StoreDebtUseCase and the two cannot drift apart. Copying those files would",
-        "put two versions of the sale rules against one database.",
+        "This application stands on its own: its own database, its own models, its",
+        "own users. It used to map `App\\` to ../../backend/app/ so that a POS sale",
+        "was written by pDaftar's own StoreDebtUseCase \u2014 which meant it could not be",
+        "installed, tested or booted without a checkout of pDaftar beside it.",
         "",
-        "CONSEQUENCE: this repository does not run on its own. pdaftar.backend must",
-        "be checked out as a SIBLING of this repository:",
-        "",
-        "    parent/",
-        "      backend/       <- git clone pdaftar.backend",
-        "      pdaftar_pos/   <- this repo",
-        "",
-        "`php artisan pos:health` and GET /api/pos/v1/health check the link and say",
-        "so plainly when it is missing."
+        "Integration with pDaftar happens over the API, not through shared classes."
     ],
     "name": "pdaftar/pos-backend",
     "type": "project",
@@ -46,13 +38,9 @@
     "autoload": {
         "psr-4": {
             "Pos\\": "app/",
-            "App\\": "../../backend/app/",
-            "Database\\Factories\\": "../../backend/database/factories/",
-            "Database\\Seeders\\": "../../backend/database/seeders/"
-        },
-        "files": [
-            "../../backend/bootstrap/helpers.php"
-        ]
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
     },
     "autoload-dev": {
         "psr-4": {

@@ -40,10 +40,6 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
-        'filament' => [
-            'driver' => 'session',
-            'provider' => 'filament_users',
-        ],
     ],
 
     /*
@@ -67,11 +63,6 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => Pos\Models\User::class,
-        ],
-
-        'filament_users' => [
-            'driver' => 'eloquent',
-            'model' => App\Models\FilamentUser::class,
         ],
 
         // 'users' => [
@@ -102,12 +93,6 @@ return [
     'passwords' => [
         'users' => [
             'provider' => 'users',
-            'table' => 'password_reset_tokens',
-            'expire' => 60,
-            'throttle' => 60,
-        ],
-        'filament_users' => [
-            'provider' => 'filament_users',
             'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,

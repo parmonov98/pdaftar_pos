@@ -60,47 +60,17 @@ jobs:
       - run: ./vendor/bin/pint --test app routes database
         working-directory: pos_backend
 
-  # ── Does CI have a key to the other repository? ───────────────────────────
-  # `secrets` is not readable from a job-level `if`, so the answer is computed
-  # here and passed down as an output.
-  preflight:
-    name: preflight
-    runs-on: ubuntu-latest
-    outputs:
-      has_backend_token: ${{ steps.check.outputs.has_backend_token }}
-    steps:
-      - id: check
-        env:
-          TOKEN: ${{ secrets.PDAFTAR_BACKEND_TOKEN }}
-        run: |
-          if [ -n "$TOKEN" ]; then
-            echo "has_backend_token=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_backend_token=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ── POS backend, the part that needs pDaftar ──────────────────────────────
-  # This repo does not run alone (see README). pdaftar.backend is private, so
-  # the checkout needs a PAT with read access to it in the repository secret
-  # PDAFTAR_BACKEND_TOKEN. Without it this job is skipped rather than failed —
-  # a fork's pull request should not go red over a secret it cannot have.
+  # ── POS backend tests ─────────────────────────────────────────────────────
+  # Runs unconditionally now. This used to be two jobs: a preflight that
+  # checked for a PAT, and a test job that checked out pdaftar.backend as a
+  # sibling because composer.json mapped `App\` into it. Without the secret
+  # the tests were skipped — which, since the secret was never set, meant this
+  # repository's test suite had never run in CI at all.
   pos_backend_tests:
     name: pos_backend (phpunit)
     runs-on: ubuntu-latest
-    needs: preflight
-    if: needs.preflight.outputs.has_backend_token == 'true'
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: pdaftar_pos
-
-      # Checked out as a SIBLING, because composer.json maps `App\` to
-      # ../../backend/app/. The directory name is part of that contract.
-      - uses: actions/checkout@v4
-        with:
-          repository: parmonov98/pdaftar.backend
-          token: ${{ secrets.PDAFTAR_BACKEND_TOKEN }}
-          path: backend
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -111,29 +81,17 @@ jobs:
       # Before composer install: post-autoload-dump boots Laravel to discover
       # packages, and that reads .env.
       - name: .env
-        working-directory: pdaftar_pos/pos_backend
+        working-directory: pos_backend
         run: cp .env.example .env
 
       - uses: ramsey/composer-install@v3
         with:
-          working-directory: pdaftar_pos/pos_backend
+          working-directory: pos_backend
 
       - name: phpunit
-        working-directory: pdaftar_pos/pos_backend
+        working-directory: pos_backend
         env:
           REDIS_CLIENT: predis
         run: |
           php artisan key:generate --force
           ./vendor/bin/phpunit
-
-      # The integrity checks in full. Reported, not enforced: most of them
-      # assert things a CI runner has no way to provide — pDaftar's database,
-      # its Redis namespace — so a red mark here would mean nothing. The two
-      # that CI *can* answer (the shared domain loads, the observers attach)
-      # are asserted for real by phpunit above.
-      - name: pos:health (informational)
-        continue-on-error: true
-        working-directory: pdaftar_pos/pos_backend
-        env:
-          REDIS_CLIENT: predis
-        run: php artisan pos:health

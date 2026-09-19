@@ -13,7 +13,7 @@
 #   1. swap, before anything else — a 1 GB instance that builds a PHP image
 #      without swap gets its build OOM-killed halfway and leaves no trace why
 #   2. Docker
-#   3. the sibling layout this repo cannot run without (see README)
+#   3. the code
 #   4. pos_backend/.env, generated, with real random secrets
 #   5. the stack and the POS's own schema
 #   6. host nginx + TLS in front of the container on 127.0.0.1:8090
@@ -27,9 +27,7 @@ DOMAIN="${1:-}"
 
 ROOT_DIR=/var/www/pos
 POS_DIR="$ROOT_DIR/pdaftar_pos"
-BACKEND_DIR="$ROOT_DIR/backend"
 POS_REPO="${POS_REPO:-https://github.com/parmonov98/pdaftar_pos.git}"
-BACKEND_REPO="${BACKEND_REPO:-git@github.com:parmonov98/pdaftar.backend.git}"
 
 step() { printf "\n\033[1m==> %s\033[0m\n" "$*"; }
 die()  { printf "\n\033[31mTOXTATILDI: %s\033[0m\n" "$*" >&2; exit 1; }
@@ -72,9 +70,11 @@ fi
 # everything below goes through sudo rather than failing on the first call.
 DOCKER="sudo docker"
 
-# ── 3. Sibling layout ──────────────────────────────────────────────────────
-# pos_backend/composer.json maps `App\` to ../../backend/app/. The directory
-# names are part of that contract, not a preference.
+# ── 3. Code ────────────────────────────────────────────────────────────────
+# One repository. This step used to clone pdaftar.backend as a sibling named
+# exactly `backend`, because composer.json mapped `App\` into it — the POS
+# could not boot without a checkout of a different product beside it. It no
+# longer maps anything there.
 step "Kod ($ROOT_DIR)"
 sudo mkdir -p "$ROOT_DIR"
 sudo chown "$USER:$USER" "$ROOT_DIR"
@@ -84,16 +84,6 @@ if [ -d "$POS_DIR/.git" ]; then
 else
     git clone "$POS_REPO" "$POS_DIR"
 fi
-
-if [ -d "$BACKEND_DIR/.git" ]; then
-    echo "   backend bor"
-else
-    git clone --depth 50 "$BACKEND_REPO" "$BACKEND_DIR" \
-        || die "pdaftar.backend klon qilinmadi. Bu yopiq repo — shu serverning SSH kaliti
-GitHub akkauntga qoshilganmi? Tekshirish:  ssh -T git@github.com"
-fi
-[ -f "$BACKEND_DIR/bootstrap/helpers.php" ] \
-    || die "$BACKEND_DIR ichida bootstrap/helpers.php yoq — kutilgan repo emas."
 
 # ── 4. .env ────────────────────────────────────────────────────────────────
 # Generated, not copied from an example with its placeholder passwords left in.

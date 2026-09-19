@@ -21,6 +21,7 @@ class UserShop extends Model {
     protected $table = 'user_shop';
 
     public const ROLE_OWNER = 'owner';
+
     public const ROLE_SELLER = 'seller';
 
     protected $fillable = ['user_id', 'shop_id', 'role'];

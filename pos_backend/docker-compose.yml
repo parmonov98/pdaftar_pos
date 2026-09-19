@@ -4,33 +4,28 @@
 # the POS leaves pDaftar serving, and vice versa. That operational independence
 # is the actual reason to split the service.
 #
-# It joins pDaftar's existing network and shares its MariaDB and Redis, because
-# the POS is not a second set of books — it writes pDaftar's tables through
-# pDaftar's own domain code.
-#
-# BOTH directories are mounted. `../backend` is not a convenience: the shared
-# domain lives there, and this app cannot boot without it. /api/pos/v1/health
-# reports it plainly if the mount is missing.
+# Everything it needs is here: its own PHP image, its own MariaDB and its own
+# Redis. It used to borrow all three from a pdaftar.backend checkout sitting
+# beside it, which meant the POS could not be run at all without cloning a
+# different product first.
 #
 #   docker compose up -d          (from pdaftar_pos/pos_backend/)
 #   → http://localhost:8090/api/pos/v1/health
 
 services:
     php-pos:
-        # Reuses the image pDaftar's php container is built from, so the PHP
-        # version and extension set cannot drift between the two apps.
-        image: pdaftar_dev-php
+        build:
+            context: ./docker/php
+        image: pos-php
         container_name: php-pos
         working_dir: /var/www/pdaftar_pos/pos_backend
         environment:
             - COMPOSER_ALLOW_SUPERUSER=1
         volumes:
-            # The GRANDparent: this repo and pdaftar.backend are siblings, and
-            # the shared domain lives in the other one.
             - ../..:/var/www
-            - ../../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+            - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
         networks:
-            - pdaftar
+            - pos
 
     nginx-pos:
         image: nginx:alpine
@@ -43,11 +38,37 @@ services:
         depends_on:
             - php-pos
         networks:
-            - pdaftar
+            - pos
+
+    mariadb:
+        image: mariadb:10.11
+        container_name: pos-dev-mariadb
+        restart: unless-stopped
+        environment:
+            MARIADB_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+            MARIADB_DATABASE: ${DB_DATABASE:-pos}
+        ports:
+            # Published on loopback so a GUI client can reach it. 3307, not
+            # 3306: a developer with pDaftar running locally already has that
+            # port, and a POS that refuses to start because of it is a bad
+            # first impression.
+            - "127.0.0.1:3307:3306"
+        volumes:
+            - mariadb:/var/lib/mysql
+        networks:
+            - pos
+
+    redis:
+        image: redis:7-alpine
+        container_name: pos-dev-redis
+        restart: unless-stopped
+        command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-secret}"]
+        networks:
+            - pos
+
+volumes:
+    mariadb:
 
 networks:
-    pdaftar:
-        # pDaftar's network, created by backend/docker-compose.yml. Declared
-        # external so this project never tries to own or delete it.
-        name: pdaftar_dev_network
-        external: true
+    pos:
+        name: pos_network

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Pos\Services;
 
-use Pos\Exceptions\BusinessException;
-use Pos\Models\Shop;
-use Pos\Models\User;
-use Pos\Models\UserShop;
 use Illuminate\Support\Facades\DB;
 use Pos\Constants\PosProvider;
 use Pos\Constants\PosScope;
+use Pos\Exceptions\BusinessException;
 use Pos\Models\PosTerminal;
+use Pos\Models\Shop;
+use Pos\Models\User;
+use Pos\Models\UserShop;
 
 /**
  * Registering, re-registering and revoking tills.
