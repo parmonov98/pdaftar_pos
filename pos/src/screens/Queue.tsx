@@ -30,6 +30,12 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
   const errored = items.filter((i) => i.status === 'error')
   const waiting = items.filter((i) => i.status === 'queued' || i.status === 'failed')
 
+  // A refusal the server will give again. These retry on every sync, so
+  // nothing breaks and nothing ever resolves either: the count sits under
+  // "kutmoqda" looking like a connection problem while a real sale goes
+  // unrecorded. After three identical rejections it is a person's problem.
+  const stuck = items.filter((i) => i.status === 'failed' && i.attempts >= 3)
+
   async function discard(item: OutboxItem) {
     const ok = confirm(
       `"${item.label}" navbatdan o'chirilsinmi?\n\n` +
@@ -45,6 +51,13 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
         <div className="notice err">
           {errored.length} ta amalning holati nomalum. Bular avtomatik qayta yuborilmaydi —
           takroriy sotuv yozilib qolmasligi uchun. pDaftarda tekshirib, keyin qo'lda hal qiling.
+        </div>
+      )}
+
+      {stuck.length > 0 && (
+        <div className="notice err">
+          {stuck.length} ta amalni server qayta-qayta rad etmoqda. Qayta urinish yordam bermaydi —
+          quyidagi xato matnini o'qing, mahsulot yoki mijoz o'chirilgan bo'lishi mumkin.
         </div>
       )}
 
@@ -90,7 +103,8 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
           </button>
         </div>
         <div className="view-summary">
-          {waiting.length} ta kutmoqda · {errored.length} ta tekshirish kerak
+          {waiting.length - stuck.length} ta kutmoqda · {stuck.length} ta rad etildi ·{' '}
+          {errored.length} ta tekshirish kerak
         </div>
         <div className="view-body">{body}</div>
         {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
