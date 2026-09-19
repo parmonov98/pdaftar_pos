@@ -1,0 +1,97 @@
+# pDaftar POS — staging, on a box of its own.
+#
+# The difference from docker-compose.yml is what is NOT assumed. That file is
+# for a developer laptop: it borrows pDaftar's MariaDB, its Redis and its
+# already-built PHP image, because on a laptop all three are already running.
+# A staging box has none of them, so this file brings its own.
+#
+# What it deliberately does NOT bring is the rest of pDaftar: no Horizon, no
+# scheduler, no phpMyAdmin, no redis-commander, no second nginx. The POS is a
+# till. It needs a database, a queue and PHP, and on a 1-2 GB instance every
+# container that is not one of those is memory taken from the ones that are.
+#
+#   docker compose -f docker-compose.staging.yml up -d
+#
+# The staging database is a COPY of pDaftar's schema, not pDaftar's live books.
+# A sale rung up here must never land in the real ledger.
+
+name: pos_staging
+
+services:
+    php-pos:
+        # Built here rather than pulled: the staging box has no pDaftar
+        # checkout to have built it earlier. Same Dockerfile as pDaftar's own
+        # php container, so the PHP version and extension set cannot drift.
+        build:
+            context: ../../backend/docker/php
+        image: pos_staging-php
+        container_name: pos-php
+        restart: unless-stopped
+        working_dir: /var/www/pdaftar_pos/pos_backend
+        environment:
+            - COMPOSER_ALLOW_SUPERUSER=1
+        volumes:
+            # The GRANDparent, exactly as in docker-compose.yml: the shared
+            # domain lives in the sibling checkout and this app cannot boot
+            # without it.
+            - ../..:/var/www
+            - ../../backend/docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+        depends_on:
+            mariadb:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        networks:
+            - pos
+
+    nginx-pos:
+        image: nginx:alpine
+        container_name: pos-nginx
+        restart: unless-stopped
+        # Bound to loopback on purpose. TLS and the public name are the host
+        # nginx's job; nothing but the reverse proxy should reach this port.
+        ports:
+            - "127.0.0.1:8090:80"
+        volumes:
+            - ../..:/var/www
+            - ./docker/nginx:/etc/nginx/conf.d
+        depends_on:
+            - php-pos
+        networks:
+            - pos
+
+    mariadb:
+        image: mariadb:10.11
+        container_name: pos-mariadb
+        restart: unless-stopped
+        environment:
+            MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+            MARIADB_DATABASE: ${DB_DATABASE}
+        volumes:
+            - mariadb:/var/lib/mysql
+        # No published port: only php-pos talks to it, over the compose
+        # network. Exposing 3306 on a public instance is how staging boxes
+        # become someone else's.
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            interval: 10s
+            timeout: 5s
+            retries: 12
+            start_period: 30s
+        networks:
+            - pos
+
+    redis:
+        image: redis:7-alpine
+        container_name: pos-redis
+        restart: unless-stopped
+        command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--save", "", "--appendonly", "no"]
+        networks:
+            - pos
+
+volumes:
+    mariadb:
+
+networks:
+    pos:
+        name: pos_staging_network
