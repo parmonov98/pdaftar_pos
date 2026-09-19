@@ -172,7 +172,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
    product name about 86px, which truncates most names to nothing useful — the
    one column a cashier reads to check they scanned the right thing. */
 @media (max-width: 1180px) { .main { grid-template-columns: 1fr 340px; } }
-@media (max-width: 980px) { .main { grid-template-columns: 1fr; } }
+/* Stacked, and the basket gets what is left rather than an equal share: the
+   sale panel is content-sized and the cart grows into the rest. */
+@media (max-width: 980px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+}
 
 .left { display: flex; flex-direction: column; min-height: 0; }
 .right {
@@ -726,11 +730,15 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .split.horizontal { grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); }
 .split-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg); }
 
-/* On a phone there is no room for two panes at once; the basket is the one
-   that matters, and the list is reachable through search. */
+/* On a phone there is no room for two panes at once, so one shows at a time
+   and .pane-switch picks it. Hiding the list outright — which is what this
+   used to do — left a phone unable to browse the catalogue at all: a cashier
+   could only type a name they already knew, with no scanner to fall back on
+   the way a counter till has. */
 @media (max-width: 700px) {
   .split { display: flex; flex-direction: column; }
-  .split > .split-pane:first-child { display: none; }
+  .split.showing-browser > .split-pane:nth-child(2) { display: none; }
+  .split.showing-cart > .split-pane:first-child { display: none; }
 }
 
 /* Which pane the keyboard is talking to. Without this a cashier pressing ↑
@@ -846,3 +854,81 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 /* Keyboard cursor in the customer list — the same marker as the product and
    basket rows, so the three lists read alike under the arrows. */
 .client-item.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+
+
+/* ─── Sale panel on a phone ───────────────────────────────────────────────
+   Customer, currency and discount are decided once per sale at most, and on
+   a 375pt screen they were holding 427 of 812 points while the basket — the
+   thing touched on every line — had 178. They fold away behind a row of
+   chips that still says what has been chosen, so folding them costs no
+   information. The totals and the pay button never fold. */
+.side-peek { display: none; }
+
+@media (max-width: 700px) {
+  .side-peek {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 10px 12px;
+    border: none; border-bottom: 1px solid var(--line);
+    background: var(--panel); color: var(--text);
+    font: inherit; text-align: left; cursor: pointer;
+  }
+
+  .side-peek .chip {
+    flex: 0 1 auto; min-width: 0;
+    padding: 5px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel-2);
+    font-size: 12.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Chosen, not default. A customer set on a nasiya sale is the one thing on
+     this row that must not be missed at a glance. */
+  .side-peek .chip.on {
+    color: var(--text); border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  .side-peek-caret { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+  .side-detail { display: none; }
+
+  /* Opened, it is a sheet: capped so the basket behind it stays visible, and
+     scrollable because the discount block alone is taller than some phones
+     have left. */
+  .right.open .side-detail {
+    display: block;
+    max-height: 46vh;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .right.open .side-spacer { display: none; }
+
+  /* The panel is content-height now, so nothing overflows and the sticky
+     positioning that fixed the old clipping has nothing left to do. */
+  .right { overflow-y: visible; }
+  .right > .totals, .right > .actions { position: static; }
+}
+
+
+/* The pane switch. Desktop shows both panes, so it has nothing to switch. */
+.pane-switch { display: none; }
+
+@media (max-width: 700px) {
+  .pane-switch {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .pane-switch button {
+    padding: 9px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+  }
+
+  .pane-switch button.on {
+    color: var(--text); border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}

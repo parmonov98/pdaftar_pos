@@ -56,6 +56,17 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [checkout, setCheckout] = useState(false)
+
+  /**
+   * Whether the sale-wide controls are showing, on a phone.
+   *
+   * They are always open on a desktop till, where there is a column to spare.
+   * On a 375pt phone they were taking 427 of 812 points and leaving the cart
+   * — the screen a cashier actually works in — with 178. Customer, currency
+   * and discount are decided once per sale at most; the basket is touched on
+   * every line, so it gets the room by default.
+   */
+  const [sideOpen, setSideOpen] = useState(false)
   const [clientPicker, setClientPicker] = useState(false)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
 
@@ -637,7 +648,33 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               </div>
             )}
 
-            <div className={`split ${splitDir}`}>
+            {/* Phone only. Two panes side by side do not fit 375pt, but the
+                list was simply hidden there — leaving a phone with no way to
+                browse at all, only to type a name it had to know already.
+                One at a time, switched here, and each gets the full height.
+
+                Driven by the same `pane` state the keyboard uses, so the
+                visible pane and the focused pane can never disagree. */}
+            <div className="pane-switch" role="tablist">
+              <button
+                role="tab"
+                aria-selected={pane === 'browser'}
+                className={pane === 'browser' ? 'on' : ''}
+                onClick={() => setPane('browser')}
+              >
+                Mahsulotlar
+              </button>
+              <button
+                role="tab"
+                aria-selected={pane === 'cart'}
+                className={pane === 'cart' ? 'on' : ''}
+                onClick={() => setPane('cart')}
+              >
+                Savat{cart.length > 0 ? ` · ${cart.length}` : ''}
+              </button>
+            </div>
+
+            <div className={`split ${splitDir} showing-${pane}`}>
               <div className="split-pane">
                 <ProductBrowser
                   ref={browserRef}
@@ -835,7 +872,28 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
           </div>
 
           {/* ─── Sale-wide decisions ─── */}
-          <div className="right">
+          <div className={`right ${sideOpen ? 'open' : ''}`}>
+            {/* Phone only. Shows what has been decided so the panel does not
+                have to be opened to check, and opens it when it does. */}
+            <button
+              type="button"
+              className="side-peek"
+              onClick={() => setSideOpen((v) => !v)}
+              aria-expanded={sideOpen}
+            >
+              <span className={`chip ${client ? 'on' : ''}`}>
+                {client ? client.name : 'Mijoz'}
+              </span>
+              <span className={`chip ${discount > 0 ? 'on' : ''}`}>
+                {discount > 0 ? `− ${formatMoney(discount)}` : 'Chegirma'}
+              </span>
+              <span className="chip">{currencyCode(currencyId)}</span>
+              <span className="side-peek-caret" aria-hidden>
+                {sideOpen ? '▾' : '▴'}
+              </span>
+            </button>
+
+            <div className="side-detail">
             <div className="side-client">
               {client ? (
                 <>
@@ -924,6 +982,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
             </div>
 
             <div className="side-spacer" />
+            </div>
 
             <div className="totals">
               <div className="row">
