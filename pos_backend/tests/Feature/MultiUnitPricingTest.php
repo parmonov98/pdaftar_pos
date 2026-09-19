@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Pos\Constants\PosScope;
 use Pos\Exceptions\BusinessException;
 use Pos\Models\Currency;
 use Pos\Models\PosTerminal;
@@ -294,6 +296,35 @@ class MultiUnitPricingTest extends TestCase {
     }
 
     /** A cashier cannot invent a price, so an unpriced line is refused. */
+    /**
+     * A client that would rather not reimplement pricing can leave the price
+     * out and let the catalogue answer. The till sends one because a cashier
+     * may override it; another POS need not.
+     */
+    public function test_a_line_with_no_price_is_priced_from_the_catalogue(): void {
+        $box = $this->boxUnit(12);
+        ProductPrice::create([
+            'shop_id' => $this->shop->id, 'product_id' => $this->cola->id,
+            'product_unit_id' => $box->id, 'currency_id' => $this->uzs->id,
+            'price_type' => ProductPrice::TYPE_SALE, 'amount' => 130000,
+        ]);
+
+        $token = $this->user->createToken('t', [PosScope::SALES_WRITE->value]);
+        $terminal = $this->terminal();
+        $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
+
+        $response = $this->withToken($token->plainTextToken)->postJson('/api/pos/v1/sales', [
+            'client_operation_id' => (string) Str::uuid(),
+            'currency_id' => $this->uzs->id,
+            'paid_amount' => 130000,
+            'items' => [['product_id' => $this->cola->id, 'product_unit_id' => $box->id, 'quantity' => 1]],
+        ]);
+
+        $response->assertSuccessful();
+        $this->assertSame('130000.000000', $response->json('data.data.sale.total'));
+        $this->assertSame(88.0, (float) $this->cola->fresh()->quantity);
+    }
+
     public function test_a_line_with_no_resolvable_price_is_refused(): void {
         $box = $this->boxUnit(12);
 

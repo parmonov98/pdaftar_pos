@@ -43,8 +43,14 @@ class PosOperationController extends Controller {
             'note' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer'],
+            'items.*.product_unit_id' => ['nullable', 'integer'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'items.*.price' => ['required', 'numeric', 'min:0'],
+            // Optional. Our own till sends one, because a cashier may
+            // override it; another POS may prefer the server to price the
+            // line from the catalogue rather than reimplement the rules for
+            // unit, currency and credit. Omitted and unresolvable is refused
+            // in the service — nothing here invents a price.
+            'items.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
     }
 
