@@ -895,7 +895,11 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
    information. The totals and the pay button never fold. */
 .side-peek { display: none; }
 
-@media (max-width: 700px) {
+/* 980 is where .main stops being two columns: above it the sale panel is a
+   column of its own with room to spare, below it the panel stacks under the
+   cart and competes with it for height. A 768pt tablet in portrait had the
+   same split as the phone did — 484 points of controls over 337 of basket. */
+@media (max-width: 980px) {
   .side-peek {
     display: flex; align-items: center; gap: 8px;
     width: 100%; padding: 10px 12px;
