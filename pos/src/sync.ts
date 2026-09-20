@@ -86,6 +86,23 @@ export async function pendingCount(): Promise<number> {
 }
 
 /**
+ * Whether a push is in the air right now.
+ *
+ * Read by the updater before it reloads for a new build. Interrupting a push
+ * is survivable — the outbox is written first and the operation id makes the
+ * resend a no-op server-side — but there is no reason to choose to.
+ *
+ * A counter rather than a flag: a manual Sinxronlash can overlap the push
+ * that submitSale kicks off, and with a boolean the first one to finish
+ * would report the other as done.
+ */
+let pushing = 0
+
+export function isPushing(): boolean {
+  return pushing > 0
+}
+
+/**
  * Send the outbox.
  *
  * Sent in insertion order, in one batch, because the server resolves
@@ -93,6 +110,15 @@ export async function pendingCount(): Promise<number> {
  * position. Splitting or reordering would break that chain.
  */
 export async function pushOutbox(): Promise<{ pushed: number; failed: number; errored: number }> {
+  pushing++
+  try {
+    return await sendOutbox()
+  } finally {
+    pushing--
+  }
+}
+
+async function sendOutbox(): Promise<{ pushed: number; failed: number; errored: number }> {
   const items = await pendingQuery().sortBy('seq')
 
   if (items.length === 0) return { pushed: 0, failed: 0, errored: 0 }

@@ -16,7 +16,17 @@ export default defineConfig({
       // the browser with no connection serves a blank page and the cashier
       // cannot reach them. Precaching the app shell is what makes the till
       // start up at all when the internet is gone.
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate' — and the "prompt" is src/updater.ts,
+      // which reloads by itself once the till is idle. autoUpdate skips the
+      // wait and swaps the worker under a running page, so a cashier mid-sale
+      // ends up on a page whose chunks no longer match the worker serving
+      // them, until something forces a reload. Here the new worker waits, and
+      // the page chooses the moment.
+      registerType: 'prompt',
+      // Registered from main.tsx instead, so the same code owns the timing.
+      // Left on 'auto' the plugin injects its own registerSW.js and the
+      // worker would be registered twice.
+      injectRegister: null,
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         // API calls must NEVER be served from a cache. A cached /sync/pull
