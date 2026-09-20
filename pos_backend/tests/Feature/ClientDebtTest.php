@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Pos\Constants\PosScope;
 use Pos\Exceptions\BusinessException;
 use Pos\Models\Client;
 use Pos\Models\ClientPayment;
@@ -332,5 +333,126 @@ class ClientDebtTest extends TestCase {
         ]);
 
         $this->assertSame('2026-09-19 10:00:00', $payment->occurred_at->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * A credit sale that was part-paid, then cancelled.
+     *
+     * The debt goes back with the goods — but the money the customer already
+     * handed over does NOT vanish with it. It stays a payment, and the
+     * balance turns negative: the shop owes it back. Netting it to zero
+     * instead would quietly keep cash the customer is standing there waiting
+     * for.
+     */
+    public function test_cancelling_a_part_paid_credit_sale_leaves_the_shop_owing_the_money_back(): void {
+        $sale = $this->sell(2, 12000, 0, $this->client->id);
+
+        ClientPayment::create([
+            'shop_id' => $this->shop->id,
+            'client_id' => $this->client->id,
+            'sale_id' => $sale->id,
+            'amount' => 10000,
+            'currency_id' => $this->uzs->id,
+            'user_id' => $this->user->id,
+            'occurred_at' => now(),
+        ]);
+
+        $this->assertSame(14000.0, $this->client->balanceIn($this->uzs->id));
+
+        app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
+
+        // Not 0: they paid 10 000 for goods that went back on the shelf.
+        $this->assertSame(-10000.0, $this->client->balanceIn($this->uzs->id));
+        $this->assertSame(1, ClientPayment::where('sale_id', $sale->id)->count());
+    }
+
+    /**
+     * And the till is told the figure BEFORE it cancels, so the confirmation
+     * can name the money that is about to become credit rather than letting
+     * the cashier discover it on the customer's balance afterwards.
+     */
+    public function test_the_history_row_carries_what_was_repaid_against_the_sale(): void {
+        $sale = $this->sell(2, 12000, 0, $this->client->id);
+
+        ClientPayment::create([
+            'shop_id' => $this->shop->id,
+            'client_id' => $this->client->id,
+            'sale_id' => $sale->id,
+            'amount' => 10000,
+            'currency_id' => $this->uzs->id,
+            'user_id' => $this->user->id,
+            'occurred_at' => now(),
+        ]);
+
+        $terminal = $this->terminal();
+        $token = $this->user->createToken('t', [PosScope::CATALOG_READ->value]);
+        $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
+
+        $row = $this->withToken($token->plainTextToken)
+            ->getJson('/api/pos/v1/sales/recent')
+            ->json('data.0');
+
+        $this->assertSame(10000.0, (float) $row['repaid_amount']);
+        $this->assertSame('debt', $row['kind']);
+        $this->assertSame('Sobir aka', $row['client_name']);
+    }
+
+    /**
+     * Money taken AT THE COUNTER on a credit sale is part of the sale row, not
+     * a separate payment — so cancelling takes it back out with everything
+     * else and the client is square again.
+     */
+    public function test_cancelling_a_sale_part_paid_at_the_till_clears_the_whole_row(): void {
+        $sale = $this->sell(2, 12000, 10000, $this->client->id);
+        $this->assertSame(14000.0, $this->client->balanceIn($this->uzs->id));
+
+        app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
+
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
+    }
+
+    /** One cancelled sale must not take another sale's debt with it. */
+    public function test_cancelling_one_credit_sale_leaves_the_others_owing(): void {
+        $first = $this->sell(1, 12000, 0, $this->client->id);
+        $this->sell(2, 12000, 0, $this->client->id);
+
+        $this->assertSame(36000.0, $this->client->balanceIn($this->uzs->id));
+
+        app(PosSaleService::class)->cancel($this->terminal(), $first->id, null);
+
+        $this->assertSame(24000.0, $this->client->balanceIn($this->uzs->id));
+    }
+
+    /** A cancelled sale in one currency leaves the other currency's debt alone. */
+    public function test_cancelling_settles_only_its_own_currency(): void {
+        $som = $this->sell(1, 12000, 0, $this->client->id, $this->uzs->id);
+        $this->sell(1, 11, 0, $this->client->id, $this->usd->id);
+
+        app(PosSaleService::class)->cancel($this->terminal(), $som->id, null);
+
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
+        $this->assertSame(11.0, $this->client->balanceIn($this->usd->id));
+    }
+
+    /**
+     * Cancelling through the dispatcher — the path the till's outbox takes —
+     * and not only through the service the other tests call directly.
+     */
+    public function test_the_outbox_path_cancels_a_credit_sale_and_moves_the_badge(): void {
+        $sale = $this->sell(2, 12000, 0, $this->client->id);
+        $before = $this->client->fresh()->updated_at;
+        $this->travel(2)->seconds();
+
+        app(PosOperationDispatcher::class)->dispatch(
+            $this->terminal(),
+            'sale.cancel',
+            ['sale_id' => $sale->id],
+            null,
+            $this->user->id,
+        );
+
+        $this->assertSame(Sale::STATUS_CANCELLED, $sale->fresh()->status);
+        $this->assertSame(0.0, $this->client->balanceIn($this->uzs->id));
+        $this->assertTrue($this->client->fresh()->updated_at->greaterThan($before));
     }
 }

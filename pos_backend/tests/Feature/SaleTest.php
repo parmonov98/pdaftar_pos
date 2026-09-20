@@ -101,6 +101,24 @@ class SaleTest extends TestCase {
         );
     }
 
+    /**
+     * A terminal token with everything the till holds.
+     *
+     * The wire tests below are not duplicates of the service ones: the till
+     * reaches cancel through a route, a scope check and the idempotency
+     * ledger, and each of those is a place the cashier's "bekor qilish" can
+     * be lost without the service ever being wrong.
+     *
+     * @param  PosScope[]  $scopes
+     */
+    private function tokenFor(PosScope ...$scopes): string {
+        $terminal = $this->terminal();
+        $token = $this->user->createToken('t', array_map(fn (PosScope $s) => $s->value, $scopes));
+        $terminal->update(['access_token_id' => $token->accessToken->getKey()]);
+
+        return $token->plainTextToken;
+    }
+
     public function test_a_sale_writes_its_lines_and_takes_the_stock(): void {
         $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]]);
 
@@ -329,5 +347,136 @@ class SaleTest extends TestCase {
         $this->assertSame(Sale::first()->id, PosOperation::first()->entity_id);
         $this->assertSame(1, Sale::count());
         $this->assertSame(8.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    /**
+     * The cashier's own path: a row in Tarix, pressed at the till.
+     *
+     * Everything below the button existed already — the operation, the
+     * service, the ledger reversal — and none of it was reachable from the
+     * till, so a wrongly rung item had no remedy at the counter.
+     */
+    public function test_the_till_can_cancel_a_sale_over_the_wire(): void {
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 3, 'price' => 12000]]);
+        $this->assertSame(7.0, (float) $this->cola->fresh()->quantity);
+
+        $this->withToken($this->tokenFor(PosScope::SALES_WRITE))
+            ->postJson('/api/pos/v1/sales/cancel', [
+                'client_operation_id' => (string) Str::uuid(),
+                'sale_id' => $sale->id,
+            ])
+            ->assertSuccessful()
+            ->assertJsonPath('data.data.sale.status', Sale::STATUS_CANCELLED);
+
+        $this->assertSame(10.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    /**
+     * The till queues the cancel in the outbox, so a retry after a dropped
+     * response is ordinary. It must undo the sale once, not put the stock
+     * back twice.
+     */
+    public function test_a_retried_cancel_returns_the_stock_once(): void {
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 3, 'price' => 12000]]);
+
+        $token = $this->tokenFor(PosScope::SALES_WRITE);
+        $body = ['client_operation_id' => (string) Str::uuid(), 'sale_id' => $sale->id];
+
+        $first = $this->withToken($token)->postJson('/api/pos/v1/sales/cancel', $body);
+        $this->app['auth']->forgetGuards();
+        $second = $this->withToken($token)->postJson('/api/pos/v1/sales/cancel', $body);
+
+        $first->assertSuccessful();
+        $second->assertSuccessful();
+        $this->assertFalse($first->json('data.replayed'));
+        $this->assertTrue($second->json('data.replayed'));
+        $this->assertSame(10.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    /**
+     * Two DIFFERENT operation ids for the same sale — a cashier pressing
+     * cancel on a row that another till already cancelled. The idempotency
+     * ledger does not cover this one; the service's own re-entry check does.
+     */
+    public function test_a_second_cancel_under_a_new_operation_id_is_still_harmless(): void {
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 3, 'price' => 12000]]);
+
+        $token = $this->tokenFor(PosScope::SALES_WRITE);
+
+        foreach ([1, 2] as $_) {
+            $this->app['auth']->forgetGuards();
+            $this->withToken($token)
+                ->postJson('/api/pos/v1/sales/cancel', [
+                    'client_operation_id' => (string) Str::uuid(),
+                    'sale_id' => $sale->id,
+                ])
+                ->assertSuccessful();
+        }
+
+        $this->assertSame(10.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    /** A till is bound to one shop, and cancelling reaches across shops or nowhere. */
+    public function test_a_till_cannot_cancel_another_shops_sale(): void {
+        $other = Shop::create(['name' => 'Boshqa', 'owner_id' => $this->user->id]);
+        $theirTerminal = PosTerminal::create([
+            'shop_id' => $other->id,
+            'device_id' => 'their-device',
+            'user_id' => $this->user->id,
+            'name' => 'Ularniki',
+            'provider' => 'pdaftar_pos',
+            'is_active' => true,
+        ]);
+
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 3, 'price' => 12000]]);
+
+        $this->expectException(BusinessException::class);
+        app(PosSaleService::class)->cancel($theirTerminal, $sale->id, null);
+    }
+
+    /** Cancelling is a write, and a read-only token must not manage it. */
+    public function test_cancelling_needs_the_sales_write_scope(): void {
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]);
+
+        $this->withToken($this->tokenFor(PosScope::CATALOG_READ))
+            ->postJson('/api/pos/v1/sales/cancel', [
+                'client_operation_id' => (string) Str::uuid(),
+                'sale_id' => $sale->id,
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(Sale::STATUS_COMPLETED, $sale->fresh()->status);
+        $this->assertSame(9.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    /**
+     * The history row has to SAY it was cancelled.
+     *
+     * The till tags the row, greys it, and leaves it out of the day's
+     * takings — all three keyed on `is_cancelled`, which the endpoint was
+     * never sending. Every cancelled sale therefore read as a live one and
+     * went on being counted into the day's total.
+     */
+    public function test_the_history_row_carries_the_fields_the_till_reads(): void {
+        $sale = $this->sell([['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]]);
+
+        $token = $this->tokenFor(PosScope::CATALOG_READ, PosScope::SALES_WRITE);
+
+        $row = $this->withToken($token)->getJson('/api/pos/v1/sales/recent')->json('data.0');
+
+        $this->assertFalse($row['is_cancelled']);
+        $this->assertSame('income', $row['kind']);
+        $this->assertFalse($row['is_credit']);
+        $this->assertSame('Anvar', $row['seller_name']);
+        $this->assertNotNull($row['created_at']);
+
+        app(PosSaleService::class)->cancel($this->terminal(), $sale->id, null);
+        $this->app['auth']->forgetGuards();
+
+        $cancelled = $this->withToken($token)->getJson('/api/pos/v1/sales/recent')->json('data.0');
+
+        $this->assertTrue($cancelled['is_cancelled']);
+        $this->assertSame(Sale::STATUS_CANCELLED, $cancelled['status']);
+        $this->assertNotNull($cancelled['cancelled_at']);
     }
 }
