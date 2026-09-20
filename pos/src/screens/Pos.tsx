@@ -19,6 +19,8 @@ import { ClientPicker } from './ClientPicker'
 import { Clients, Products } from './Catalog'
 import { Devices } from './Devices'
 import { Drawer, type View } from './Drawer'
+import { keyOwner } from '../keys'
+import { toast, type ToastKind } from '../toast'
 import { History } from './History'
 import { ProductBrowser, type BrowserHandle } from './ProductBrowser'
 import { ProductSearch } from './ProductSearch'
@@ -71,13 +73,11 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   const [receipt, setReceipt] = useState<Receipt | null>(null)
 
   const [theme, setThemeState] = useState<Theme>(getTheme)
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [online, setOnline] = useState(navigator.onLine)
   const [pending, setPending] = useState(0)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  const toastTimer = useRef<number | null>(null)
   /** Undo stacks, kept per tab so switching does not lose a tab's history. */
   const undoStacks = useRef<Map<string, DraftLine[][]>>(new Map())
   const [undoDepth, setUndoDepth] = useState(0)
@@ -142,10 +142,15 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
     [currencies],
   )
 
-  function say(kind: 'ok' | 'err' | 'warn', text: string) {
-    setToast({ kind, text })
-    if (toastTimer.current) window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(null), 6000)
+  /**
+   * Say something that happened.
+   *
+   * The message goes to the toast stack, which lives outside this screen's
+   * layout — it used to be rendered inline here, and every "Sotuv yozildi"
+   * shoved the basket down the moment the cashier was reaching into it.
+   */
+  function say(kind: ToastKind, text: string) {
+    toast(kind, text)
   }
 
   useEffect(() => {
@@ -273,15 +278,22 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   }, [active, productsById])
 
   /*
-   * The whole sale, on the keyboard.
+   * The whole till, on the keyboard.
    *
    * A till frequently has no mouse, and where it has one a cashier with a
    * queue does not reach for it: the hand is on the keys or the scanner.
    * Function keys rather than letter chords, because the scanner types
    * letters — a barcode containing "p" must not fire a shortcut.
    *
+   * Everywhere:
+   *   F2        open the menu (Tarix, Mijozlar, Navbat, …)
+   *   F9        Sinxronlash
+   *   Esc       back to the sale screen
+   *
+   * On the sale screen:
    *   F3        find a product
    *   F4        take payment
+   *   F7        choose the customer
    *   F8        flip the split
    *   Tab       move between the two panes
    *   ↑ ↓       move in the focused pane
@@ -297,6 +309,39 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
       const target = event.target as HTMLElement | null
       const typing = target?.tagName === 'INPUT' || target?.tagName === 'SELECT' || target?.tagName === 'TEXTAREA'
+
+      // ─── Who owns this key ───
+      //
+      // One rule, stated in keys.ts and tested there. Inline, it was answered
+      // differently in each branch and the sale screen's bindings leaked onto
+      // every other screen.
+      const owner = keyOwner({
+        key: event.key,
+        view,
+        drawerOpen,
+        dialogOpen: checkout,
+        typing,
+      })
+
+      // ─── Keys that work on every screen ───
+      //
+      // Without these the menu was mouse-only, and the menu is the only way
+      // to Tarix, Mijozlar, Mahsulotlar, Navbat and Qurilmalar: a keyboard
+      // user could ring up sales and reach nothing else in the product.
+      if (owner === 'global') {
+        event.preventDefault()
+
+        if (event.key === 'F2') setDrawerOpen((open) => !open)
+        else if (event.key === 'F9') { if (!syncing) void runSync() }
+        // Out of the menu first, then out of the screen it opened.
+        else if (drawerOpen) setDrawerOpen(false)
+        else setView('sale')
+
+        return
+      }
+
+      // ─── Everything below belongs to the sale screen ───
+      if (owner !== 'sale') return
 
       if (event.key === 'F3') {
         event.preventDefault()
@@ -317,7 +362,17 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
         return
       }
 
-      if (event.key === 'Tab' && pane === 'cart' && !typing) {
+      if (event.key === 'F7') {
+        event.preventDefault()
+        setClientPicker(true)
+        return
+      }
+
+      // Forward Tab moves between the two work panes. Shift+Tab is left
+      // alone on purpose: it is the way OUT of the work area, to the tab
+      // strip, the top bar and the sale-wide controls. Swallowing both left
+      // the cashier cycling between two panes with no exit.
+      if (event.key === 'Tab' && !event.shiftKey && pane === 'cart' && !typing) {
         event.preventDefault()
         setPane('browser')
         return
@@ -401,7 +456,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
     // dependency — the effect re-subscribes often enough on the state it does
     // list, and each run closes over a current copy.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkout, pane, cart, cartCursor])
+  }, [checkout, pane, cart, cartCursor, view, drawerOpen, syncing])
 
   // A line removed under the cursor must not leave it pointing past the end.
   useEffect(() => {
@@ -641,12 +696,6 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                 ↺ Qaytarish
               </button>
             </div>
-
-            {toast && (
-              <div className={`notice ${toast.kind}`} onClick={() => setToast(null)}>
-                {toast.text}
-              </div>
-            )}
 
             {/* Phone only. Two panes side by side do not fit 375pt, but the
                 list was simply hidden there — leaving a phone with no way to
@@ -908,7 +957,10 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               <span><kbd>+</kbd><kbd>−</kbd>miqdor</span>
               <span><kbd>Del</kbd>o'chirish</span>
               <span><kbd>F4</kbd>to'lov</span>
+              <span><kbd>F7</kbd>mijoz</span>
               <span><kbd>F8</kbd>{splitDir === 'vertical' ? 'yuqori/past' : 'yonma-yon'}</span>
+              <span><kbd>F2</kbd>menyu</span>
+              <span><kbd>F9</kbd>sinxron</span>
             </div>
           </div>
 

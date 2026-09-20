@@ -114,11 +114,24 @@ export function Queue({ onClose, inline = false }: { onClose: () => void; inline
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navbat va tarix"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            onClose()
+          }
+        }}
+      >
         <h2>Navbat va tarix</h2>
         {body}
         <div style={{ marginTop: 14 }}>
-          <button className="ghost" style={{ width: '100%' }} onClick={onClose}>
+          {/* Focused on open, so Escape has somewhere to land. */}
+          <button className="ghost" style={{ width: '100%' }} autoFocus onClick={onClose}>
             Yopish
           </button>
         </div>

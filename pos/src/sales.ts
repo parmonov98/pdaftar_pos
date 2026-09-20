@@ -183,3 +183,122 @@ export function round2(value: number): number {
 export function formatMoney(value: number): string {
   return new Intl.NumberFormat('uz-UZ', { maximumFractionDigits: 2 }).format(value)
 }
+
+// ─── Cancelling a sale ───
+
+/**
+ * A history row, as far as cancelling cares about it.
+ *
+ * Structural rather than the whole `RecentSale`, so the rules below can be
+ * tested without a server payload — and so sales.ts does not depend on api.ts
+ * in the direction that would make the cycle.
+ */
+export type CancellableSale = {
+  id: number
+  total: number
+  paid_amount: number
+  repaid_amount?: number
+  is_cancelled: boolean
+  kind?: 'income' | 'debt'
+}
+
+/**
+ * Why this sale cannot be cancelled right now, or null when it can.
+ *
+ * **Cancelling is online-only, and that is a deliberate exception to the
+ * outbox-first rule the rest of the till follows.** Four reasons, in order of
+ * how badly each one bites:
+ *
+ *  1. `sale.cancel` names a SERVER sale id. A sale rung up offline has no such
+ *     id until it syncs — nothing resolves an outbox row into one — so an
+ *     offline cancel of the sale a cashier most wants to undo (the one they
+ *     just made) could not be expressed at all.
+ *  2. Tarix itself is server-backed. Offline the screen shows an error instead
+ *     of rows, so there is no row to press this on in the first place.
+ *  3. The customer is being handed money back NOW. A cancel that sits in the
+ *     queue until the connection returns means the other tills — and the
+ *     owner's phone — go on showing the debt as owed and the goods as sold,
+ *     for as long as that takes. This is the same trade DebtPayment refuses.
+ *  4. The decision itself may be stale: another till can have taken a
+ *     repayment against this sale since this screen loaded.
+ *
+ * What the ledger does NOT object to is the ordering — reversal is a deletion
+ * of the sale's movements and deltas commute, so an out-of-order cancel lands
+ * on the same balance. The reasons above are about the id and the people, not
+ * the arithmetic.
+ */
+export function cancelBlocker(sale: CancellableSale, online: boolean): string | null {
+  if (sale.is_cancelled) return 'Bu sotuv allaqachon bekor qilingan.'
+
+  if (!online) {
+    return (
+      "Internet yo'q. Bekor qilish uchun ulanish kerak — aks holda tovar boshqa " +
+      'kassalarda sotilgan, qarz esa to\'lanmagan bo\'lib turaveradi.'
+    )
+  }
+
+  return null
+}
+
+/**
+ * Everything that changes when this is cancelled, in plain words.
+ *
+ * Spelled out because two of them cost the cashier money out of the drawer,
+ * and neither is visible on the row being cancelled: the cash already taken
+ * has to be handed back, and a repayment made against a nasiya sale turns
+ * into credit the shop owes.
+ */
+export function cancelEffects(sale: CancellableSale, currency: string): string[] {
+  const money = (value: number) => `${formatMoney(value)} ${currency}`.trim()
+  const effects = ['Mahsulotlar omborga qaytariladi.']
+
+  const owed = round2(sale.total - sale.paid_amount)
+  if (owed > 0) effects.push(`Mijoz qarzidan ${money(owed)} o'chiriladi.`)
+
+  if (sale.paid_amount > 0) {
+    effects.push(`Kassadan mijozga ${money(sale.paid_amount)} qaytarish kerak.`)
+  }
+
+  // Repayments taken AFTER the sale are not undone by cancelling it — they
+  // stay on the client as credit. The shop owes that money back, and the only
+  // moment anybody is in a position to notice is right now.
+  const repaid = round2(sale.repaid_amount ?? 0)
+  if (repaid > 0) {
+    effects.push(
+      `Mijoz keyin to'lagan ${money(repaid)} haqdorlik bo'lib qoladi — qaytarish kerak.`,
+    )
+  }
+
+  effects.push("Sotuv tarixda \"bekor qilingan\" bo'lib qoladi, o'chirilmaydi.")
+
+  return effects
+}
+
+/**
+ * Put the cancel in the outbox and try to send it.
+ *
+ * Through the outbox even though the button is online-only: it is the one
+ * write path, the operation id is minted at the cashier's press so a retry
+ * cannot cancel twice, and if the connection drops between the press and the
+ * response the decision is not lost — it goes up with the next Sinxronlash,
+ * still naming a sale id the server knows.
+ */
+export async function cancelSale(
+  sale: CancellableSale,
+  currency: string,
+): Promise<{ synced: boolean; error: string | null }> {
+  const label = `Bekor qilish · #${sale.id} · ${formatMoney(sale.total)} ${currency}`.trim()
+  const item = await enqueue('sale.cancel', { sale_id: sale.id }, label)
+
+  try {
+    await pushOutbox()
+    const stored = await db.outbox.get(item.seq!)
+
+    return {
+      synced: stored?.status === 'sent',
+      error: stored?.status === 'sent' ? null : (stored?.error ?? null),
+    }
+  } catch (e) {
+    return { synced: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}

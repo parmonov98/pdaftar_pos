@@ -39,7 +39,22 @@ export function ReceiptView({
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal receipt-modal" onClick={(e) => e.stopPropagation()}>
+      {/* Escape closes it, like every other dialog on the till. This one
+          appears after EVERY sale, so on a keyboard-only counter it sat in
+          front of the next customer until somebody tabbed to the button. */}
+      <div
+        className="modal receipt-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chek"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            onClose()
+          }
+        }}
+      >
         <div className="no-print">
           <h2>Chek</h2>
 
@@ -158,7 +173,11 @@ export function ReceiptView({
         </div>
 
         <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button type="button" className="ghost" style={{ flex: 1 }} onClick={onClose}>
+          {/* Focused on open so Escape and Enter both reach this dialog. The
+              receipt appears by itself after a sale, with focus still on the
+              screen behind it — an Escape handler nothing had focus for would
+              have been a comment rather than a feature. */}
+          <button type="button" className="ghost" style={{ flex: 1 }} autoFocus onClick={onClose}>
             Yopish
           </button>
           <button type="button" className="primary" style={{ flex: 2 }} onClick={() => window.print()}>

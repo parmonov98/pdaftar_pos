@@ -4,6 +4,7 @@ import { clearCache } from './db'
 import { pullAll } from './sync'
 import { Login } from './screens/Login'
 import { Pos } from './screens/Pos'
+import { Toasts } from './screens/Toasts'
 
 type Phase =
   | { kind: 'booting' }
@@ -95,5 +96,11 @@ export default function App() {
     return <Login onReady={() => void boot()} />
   }
 
-  return <Pos me={phase.me} onLogout={logout} />
+  return (
+    <>
+      <Pos me={phase.me} onLogout={logout} />
+      {/* One stack for the whole app, outside every screen's layout. */}
+      <Toasts />
+    </>
+  )
 }

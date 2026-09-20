@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { addLine, priceFor } from './drafts'
-import { cartSubtotal, lineTotal, owedIn, type CartLine } from './sales'
+import {
+  cancelBlocker,
+  cancelEffects,
+  cartSubtotal,
+  formatMoney,
+  lineTotal,
+  owedIn,
+  type CancellableSale,
+  type CartLine,
+} from './sales'
 import type { Product, ProductUnitOption } from './db'
 
 /**
@@ -144,5 +153,95 @@ describe('owedIn', () => {
 
   it('treats a missing map as nothing owed', () => {
     expect(owedIn(undefined)).toEqual([])
+  })
+})
+
+/**
+ * Undoing a sale.
+ *
+ * The arithmetic of a cancellation is not the arithmetic of a sale run
+ * backwards: the goods return, the debt goes with them, and the money that
+ * already changed hands does neither. Two of the lines below are cash the
+ * cashier has to take back out of the drawer, and nothing on the row being
+ * cancelled says so.
+ */
+describe('cancelBlocker', () => {
+  const sale = (over: Partial<CancellableSale> = {}): CancellableSale => ({
+    id: 7,
+    total: 24000,
+    paid_amount: 24000,
+    is_cancelled: false,
+    kind: 'income',
+    ...over,
+  })
+
+  it('allows a live sale on a connected till', () => {
+    expect(cancelBlocker(sale(), true)).toBeNull()
+  })
+
+  it('refuses offline, because the operation names a server id', () => {
+    // A sale rung up offline has no server id until it syncs, the list it
+    // would be picked from is server-backed, and the customer is being handed
+    // money back now — not whenever the wifi returns.
+    expect(cancelBlocker(sale(), false)).toContain("Internet yo'q")
+  })
+
+  it('refuses one that is already cancelled, online or not', () => {
+    expect(cancelBlocker(sale({ is_cancelled: true }), true)).toContain('allaqachon')
+    expect(cancelBlocker(sale({ is_cancelled: true }), false)).toContain('allaqachon')
+  })
+})
+
+describe('cancelEffects', () => {
+  const sale = (over: Partial<CancellableSale> = {}): CancellableSale => ({
+    id: 7,
+    total: 24000,
+    paid_amount: 24000,
+    is_cancelled: false,
+    kind: 'income',
+    ...over,
+  })
+
+  const joined = (s: CancellableSale) => cancelEffects(s, 'UZS').join(' | ')
+
+  // Amounts are formatted with uz-UZ group separators, which are NOT ASCII
+  // spaces. Building the expectation the same way the screen does keeps the
+  // test about the sentence rather than about Intl's choice of whitespace.
+  const money = (value: number) => `${formatMoney(value)} UZS`
+
+  it('always returns the stock and keeps the row', () => {
+    const text = joined(sale())
+    expect(text).toContain('omborga qaytariladi')
+    expect(text).toContain('bekor qilingan')
+  })
+
+  it('names the cash that has to come back out of the drawer', () => {
+    expect(joined(sale())).toContain(`Kassadan mijozga ${money(24000)}`)
+  })
+
+  it('names the debt a nasiya sale takes with it', () => {
+    const text = joined(sale({ paid_amount: 0, kind: 'debt' }))
+    expect(text).toContain(`qarzidan ${money(24000)} o'chiriladi`)
+    // Nothing was handed over, so nothing is handed back.
+    expect(text).not.toContain('Kassadan')
+  })
+
+  it('splits a part-paid nasiya sale into the debt and the cash', () => {
+    const text = joined(sale({ paid_amount: 10000, kind: 'debt' }))
+    expect(text).toContain(`qarzidan ${money(14000)} o'chiriladi`)
+    expect(text).toContain(`Kassadan mijozga ${money(10000)}`)
+  })
+
+  it('warns that a later repayment is left behind as credit', () => {
+    // The one that costs the shop money quietly: cancelling drops the debt
+    // but not the payment, so the balance goes negative and the customer is
+    // owed cash nobody told the cashier about.
+    const text = joined(sale({ paid_amount: 0, kind: 'debt', repaid_amount: 10000 }))
+    expect(text).toContain('haqdorlik')
+    expect(text).toContain(money(10000))
+  })
+
+  it('says nothing about a repayment when there was none', () => {
+    expect(joined(sale({ repaid_amount: 0 }))).not.toContain('haqdorlik')
   })
 })

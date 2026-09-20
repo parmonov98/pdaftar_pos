@@ -26,6 +26,8 @@
   --accent-fg: #fff;
   --ok: #2f9e6e;
   --danger: #d15252;
+  --danger-solid: #c23b38;
+  --danger-solid-hover: #ad3431;
   --warn: #d9a441;
 
   /* Readable ON the page background. */
@@ -64,6 +66,8 @@
   --accent-fg: #fff;
   --ok: #1f8a5b;
   --danger: #c33636;
+  --danger-solid: #c23b38;
+  --danger-solid-hover: #ad3431;
   --warn: #9a6b0d;
 
   --ok-text: #1a7a4f;
@@ -115,6 +119,19 @@ button.primary {
 button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 button.ghost { background: transparent; }
 button.danger { border-color: var(--danger); color: var(--danger-text); }
+
+/* A destructive confirm, filled.
+   `.primary.danger` used to render as the ordinary blue primary — `.primary`
+   sets the background and `.danger` only touched the border — so "Ha, bekor
+   qilinsin" looked exactly like "To'lov qilish", in the same corner of the
+   same dialog. Measured like the accent was: white on #c23b38 is 5.27:1, and
+   the fill stands 3.13:1 off the modal panel. */
+button.primary.danger {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+button.primary.danger:hover:not(:disabled) { background: var(--danger-solid-hover); }
 button.x { padding: 6px 10px; color: var(--muted); }
 button.x:hover { color: var(--text); }
 
@@ -128,6 +145,20 @@ input, select, textarea {
   width: 100%;
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+/* Where the keyboard is, visible from arm's length under shop lighting.
+   Inputs had their ring removed and replaced with a border tint, which reads
+   at a foot and not at a metre; buttons had whatever the browser drew. On a
+   till that is meant to be run without a mouse, "which control am I on" is
+   not a detail. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 input[type=number] { -moz-appearance: textfield; }
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -292,6 +323,9 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .tag {
   font-size: 11px; color: var(--muted); border: 1px solid var(--line);
   border-radius: 999px; padding: 2px 8px; margin-left: 8px; font-weight: 500;
+  /* A pill that wraps is two half-pills. "bekor qilingan" broke across two
+     lines on a 375pt phone and read as two separate badges. */
+  white-space: nowrap;
 }
 .tag.danger { color: var(--danger-text); border-color: var(--danger-line); }
 .tag.ok { color: var(--ok-text); border-color: var(--ok-line); }
@@ -299,6 +333,15 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 
 .hist-row { border-bottom: 1px solid var(--line); }
 .hist-row.cancelled { opacity: 0.55; }
+/* Where the arrows are. A keyboard cursor needs to be visible from across a
+   counter, which a focus ring on one of three buttons in the row is not. */
+.hist-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* The keyboard legend, on its own line. Hidden on a phone, which has no
+   keyboard to legend — there it was running into the end of the summary
+   sentence and reading as part of it. */
+.keyline { display: block; margin-top: 4px; }
+@media (max-width: 700px) { .keyline { display: none; } }
 .hist-main {
   display: flex; align-items: center; gap: 12px; width: 100%;
   border: none; background: transparent; text-align: left; padding: 11px 12px;
@@ -569,9 +612,15 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 
 /* The reprint button sits alongside the row, not inside its expand button —
    nesting one button in another is invalid and swallows the click. */
-.hist-row { display: flex; align-items: flex-start; }
+/* wrap, so the expanded lines drop BELOW the row instead of being squeezed
+   in beside it. `.hist-items` asks for a full row with flex-basis: 100%,
+   which a nowrap flex container cannot give it — it just crushed the sale's
+   own summary into a column two words wide. */
+.hist-row { display: flex; flex-wrap: wrap; align-items: flex-start; }
 .hist-row .hist-main { flex: 1; }
-.hist-print { align-self: center; margin-right: 10px; font-size: 16px; padding: 6px 10px; }
+.hist-print { align-self: center; font-size: 16px; padding: 6px 10px; }
+.hist-cancel { align-self: center; margin-right: 10px; margin-left: 6px; font-size: 15px; padding: 6px 10px; color: var(--danger-text); }
+.hist-cancel:hover { border-color: var(--danger-line); }
 .hist-items { flex-basis: 100%; }
 
 /* A button that reads as a link: used to move between signing in and
@@ -1055,4 +1104,90 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .totals { padding: 8px 16px; }
   .totals .row { padding: 1px 0; }
   .side-foot { display: none; }
+}
+
+/* ─── Toasts ─── */
+
+/*
+ * Top-right, out of the document flow, sliding in from the edge.
+ *
+ * They used to be a notice block inside the sale panel, which pushed the
+ * basket down when one appeared and let it jump back when it went — moving
+ * the row the cashier was reaching for, at the exact moment the message was
+ * telling them the sale had gone through.
+ */
+.toast-stack {
+  position: fixed;
+  top: 66px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* The stack must not swallow clicks meant for the screen behind it; the
+     cards themselves take their own. */
+  pointer-events: none;
+  max-width: min(380px, calc(100vw - 32px));
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-size: 13.5px;
+  line-height: 1.45;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  animation: toast-in 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.toast.leaving {
+  /* Back out the way it came, and the 200ms here is the number toast.ts
+     waits before dropping the row. */
+  animation: toast-out 200ms ease-in forwards;
+}
+
+.toast .toast-text { flex: 1; min-width: 0; }
+.toast .toast-x { opacity: 0.55; font-size: 12px; line-height: 1.6; }
+.toast:hover .toast-x { opacity: 1; }
+
+.toast.ok { background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok-text); }
+.toast.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); }
+.toast.err { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger-text); }
+
+@keyframes toast-in {
+  from { transform: translateX(calc(100% + 16px)); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(calc(100% + 16px)); opacity: 0; }
+}
+
+/* On a phone the stack spans the width, so it slides down from the top
+   instead — a 343px card travelling in from the right edge of a 375px
+   screen is the whole screen moving sideways. */
+@media (max-width: 560px) {
+  /* Still BELOW the top bar, not over it: at top: 8px the card landed on the
+     hamburger and the Onlayn pill, so the message and the controls it was
+     covering were both unreadable. */
+  .toast-stack { top: 62px; left: 8px; right: 8px; max-width: none; }
+  @keyframes toast-in {
+    from { transform: translateY(-14px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes toast-out {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(-14px); opacity: 0; }
+  }
+}
+
+/* Someone who has asked the OS for less motion still needs the message. */
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.leaving { animation-duration: 1ms; }
 }

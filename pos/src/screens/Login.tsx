@@ -191,11 +191,15 @@ export function Login({ onReady }: { onReady: () => void }) {
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                 />
+                {/* Reachable by Tab. It was tabIndex={-1} to keep the path
+                    from the password straight to Kirish — which left the one
+                    control that tells a cashier WHY their password is being
+                    refused available only to a mouse. */}
                 <button
                   type="button"
                   className="affix"
                   onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
+                  aria-pressed={showPassword}
                 >
                   {showPassword ? 'Yashirish' : "Ko'rsatish"}
                 </button>
@@ -282,11 +286,15 @@ export function Login({ onReady }: { onReady: () => void }) {
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
                 />
+                {/* Reachable by Tab. It was tabIndex={-1} to keep the path
+                    from the password straight to Kirish — which left the one
+                    control that tells a cashier WHY their password is being
+                    refused available only to a mouse. */}
                 <button
                   type="button"
                   className="affix"
                   onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
+                  aria-pressed={showPassword}
                 >
                   {showPassword ? 'Yashirish' : "Ko'rsatish"}
                 </button>

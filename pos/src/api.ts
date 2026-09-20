@@ -372,7 +372,15 @@ export type RecentSale = {
   client_phone: string | null
   seller_name: string | null
   is_cancelled: boolean
-  /** Kassa's free-text line: products, quantities, discount. */
+  /**
+   * Repayments taken against this sale AFTER it was rung up.
+   *
+   * Cancelling does not undo them — the goods go back, the cash the customer
+   * already handed over does not — so this is what the confirmation warns
+   * will be left sitting on the client as credit.
+   */
+  repaid_amount: number
+  /** The sale's own note line. */
   description: string | null
   created_at: string | null
   items: Array<{
