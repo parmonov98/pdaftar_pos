@@ -116,22 +116,63 @@ export async function ensureDraft(currencyId: number): Promise<string> {
  * unit and nothing else. Pricing a box from it would be out by a factor of
  * twelve, so it deliberately does not scale.
  */
-export function priceFor(product: Product, productUnitId: number | null): number | null {
+/**
+ * What this product costs, in one unit and ONE CURRENCY.
+ *
+ * The currency was missing here, and its absence was a live bug rather than
+ * a gap: `product_prices` is keyed on (unit, currency, type), so a product
+ * the shop had priced in both so'm and dollars returned whichever row
+ * happened to come first in the array. The number on the line could be
+ * dollars while the line said so'm, and nothing on screen gave it away.
+ *
+ * Mirrors PosPricingService::priceFor on the server, including the awkward
+ * part: `products.price` is a legacy column with no currency beside it, so
+ * it counts only when the currency being asked for is the one that column
+ * was typed in — the product's own, or the shop's when the product has
+ * none. Handing a so'm number back as dollars is how a som gets sold for a
+ * dollar.
+ *
+ * Null means the shop has not priced this combination. The caller zeroes
+ * the line rather than carrying the old number over, which turns it red and
+ * stops checkout — see setLineUnit.
+ */
+export function priceFor(
+  product: Product,
+  productUnitId: number | null,
+  currencyId: number,
+  shopCurrencyId?: number | null,
+): number | null {
   const unit = product.units?.find((u) => u.id === productUnitId)
+  const rows = product.prices ?? []
 
   if (unit) {
-    const rows = product.prices ?? []
-    const exact = rows.find((p) => p.product_unit_id === unit.id && p.type === 'sale')
+    const exact = rows.find(
+      (p) => p.product_unit_id === unit.id && p.currency_id === currencyId && p.type === 'sale',
+    )
     if (exact) return exact.amount
-
-    const isBase = unit.numerator === 1 && unit.denominator === 1
-    if (!isBase) return null
   }
 
-  return product.price ?? null
+  // The legacy column, and only where it actually means something. A box
+  // priced from the bottle's column would be off by a factor of twelve, so
+  // this deliberately does NOT scale by the conversion.
+  const isBase = unit ? unit.numerator === 1 && unit.denominator === 1 : true
+
+  // A null currency on the product means the shop's own, not "any".
+  const sameCurrency =
+    product.currency_id == null
+      ? shopCurrencyId != null && shopCurrencyId === currencyId
+      : product.currency_id === currencyId
+
+  if (isBase && sameCurrency) return product.price ?? null
+
+  return null
 }
 
-export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
+export function addLine(
+  lines: DraftLine[],
+  product: Product,
+  shopCurrencyId?: number | null,
+): DraftLine[] {
   const existing = lines.find((l) => l.productId === product.id)
 
   if (existing) {
@@ -152,18 +193,22 @@ export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
     product.units?.find((u) => u.numerator === 1 && u.denominator === 1) ??
     null
 
+  // The product's own currency, so a dollar-priced item arrives priced in
+  // dollars rather than silently becoming that many so'm.
+  const currencyId = product.currency_id ?? shopCurrencyId ?? null
+
   return [
     ...lines,
     {
       productId: product.id,
       name: product.name ?? '',
       quantity: 1,
-      price: priceFor(product, base?.id ?? null) ?? product.price ?? 0,
+      price:
+        currencyId === null
+          ? (product.price ?? 0)
+          : (priceFor(product, base?.id ?? null, currencyId, shopCurrencyId) ?? 0),
       productUnitId: base?.id ?? null,
-      // The product's own currency, so a dollar-priced item arrives priced
-      // in dollars rather than silently becoming that many so'm. Null falls
-      // back to the draft's currency at render time.
-      currencyId: product.currency_id ?? null,
+      currencyId,
     },
   ]
 }

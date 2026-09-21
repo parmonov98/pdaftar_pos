@@ -635,7 +635,13 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
           ? {
               ...l,
               productUnitId: unitId,
-              price: priceFor(productsById.get(productId)!, unitId) ?? 0,
+              price:
+                priceFor(
+                  productsById.get(productId)!,
+                  unitId,
+                  l.currencyId ?? shopCurrency,
+                  shopCurrency,
+                ) ?? 0,
             }
           : l,
       ),
@@ -643,20 +649,41 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   }
 
   /**
-   * Move a line to the next currency the shop keeps.
+   * Move a line to the next currency the shop keeps, and re-price it.
    *
-   * The PRICE IS NOT CONVERTED. There is no rate on this till and inventing
-   * one would quietly restate what the customer is being charged; the number
-   * stays as typed and only the currency it is counted in changes, which is
-   * what a cashier correcting "that one is in dollars" actually means.
+   * The price comes from the CATALOGUE, not from a conversion. There is no
+   * exchange rate anywhere in this system — `currencies` holds a code, a
+   * name and a sign — so converting would mean inventing a rate and
+   * quietly restating what the customer is being charged. What the shop
+   * does have is a price per currency, in `product_prices`, and that is
+   * what a shop keeping dollars and so'm has actually decided each item is
+   * worth in each.
+   *
+   * No price on record for the new currency zeroes the line rather than
+   * carrying the old number across, exactly as switching the unit does: the
+   * row turns red, checkout refuses it, and the cashier types the number.
+   * Carrying 12 000 over into dollars would look entirely normal and be
+   * wrong by a factor of twelve thousand.
    */
   function cycleLineCurrency(productId: number, from: number) {
     const ids = currencies.map((c) => c.id)
     if (ids.length < 2) return
 
     const next = ids[(Math.max(0, ids.indexOf(from)) + 1) % ids.length]
+    const product = productsById.get(productId)
+
     mutateLines((lines) =>
-      lines.map((l) => (l.productId === productId ? { ...l, currencyId: next } : l)),
+      lines.map((l) =>
+        l.productId === productId
+          ? {
+              ...l,
+              currencyId: next,
+              price: product
+                ? (priceFor(product, l.productUnitId ?? null, next, shopCurrency) ?? 0)
+                : 0,
+            }
+          : l,
+      ),
     )
   }
 
@@ -863,7 +890,9 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
             <div className="search-row">
               <ProductSearch
                 products={products}
-                onPick={(product) => mutateLines((lines) => addLine(lines, product))}
+                onPick={(product) =>
+                  mutateLines((lines) => addLine(lines, product, shopCurrency))
+                }
                 onMiss={(code) => say('err', `"${code}" bo'yicha mahsulot topilmadi`)}
               />
               <button
@@ -909,7 +938,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                   products={products}
                   focused={pane === 'browser'}
                   onPick={(product) => {
-                    mutateLines((lines) => addLine(lines, product))
+                    mutateLines((lines) => addLine(lines, product, shopCurrency))
                     say('ok', `${product.name} qo'shildi`)
                   }}
                   onLeave={() => setPane('cart')}

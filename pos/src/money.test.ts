@@ -67,22 +67,65 @@ function fanta(overrides: Partial<Product> = {}): Product {
 }
 
 describe('priceFor', () => {
+  const UZS = 1
+  const USD = 2
+
   it('prices each unit from its own row', () => {
-    expect(priceFor(fanta(), DONA.id)).toBe(12000)
-    expect(priceFor(fanta(), KAROBKA.id)).toBe(130000)
+    expect(priceFor(fanta(), DONA.id, UZS)).toBe(12000)
+    expect(priceFor(fanta(), KAROBKA.id, UZS)).toBe(130000)
+  })
+
+  it('prices from the row for the currency being asked for', () => {
+    // The shipped bug: the currency was not part of the lookup, so a
+    // product priced in both returned whichever row came first. The line
+    // could say so'm and hold dollars, with nothing on screen to show it.
+    const both = fanta({
+      prices: [
+        { product_unit_id: DONA.id, currency_id: UZS, amount: 12000, type: 'sale' },
+        { product_unit_id: DONA.id, currency_id: USD, amount: 1, type: 'sale' },
+      ],
+    })
+
+    expect(priceFor(both, DONA.id, UZS)).toBe(12000)
+    expect(priceFor(both, DONA.id, USD)).toBe(1)
+  })
+
+  it('refuses a currency the shop never priced', () => {
+    // Better an empty, red line the cashier types into than a so'm figure
+    // presented as dollars.
+    expect(priceFor(fanta(), DONA.id, USD)).toBeNull()
+  })
+
+  it('uses the legacy column only for the currency it was typed in', () => {
+    // products.price has no currency beside it; it means the product's own.
+    const noRows = fanta({ prices: [], currency_id: UZS })
+
+    expect(priceFor(noRows, DONA.id, UZS)).toBe(12000)
+    expect(priceFor(noRows, DONA.id, USD)).toBeNull()
+  })
+
+  it('reads a currency-less product as the shop own currency', () => {
+    // Rows written before the till sent a currency hold a bare number, and
+    // it was typed in the only currency the shop had.
+    const legacy = fanta({ prices: [], currency_id: null })
+
+    expect(priceFor(legacy, DONA.id, UZS, UZS)).toBe(12000)
+    expect(priceFor(legacy, DONA.id, USD, UZS)).toBeNull()
+    // No shop currency to resolve against: unpriceable rather than guessed.
+    expect(priceFor(legacy, DONA.id, UZS)).toBeNull()
   })
 
   it('refuses to price a larger unit from the base unit column', () => {
     // A box priced from products.price would ring up at 12 000 — one
     // twelfth of the box, and nothing on screen would look unusual.
     const unpriced = fanta({ prices: [{ product_unit_id: 1, currency_id: 1, amount: 12000, type: 'sale' }] })
-    expect(priceFor(unpriced, KAROBKA.id)).toBeNull()
+    expect(priceFor(unpriced, KAROBKA.id, UZS)).toBeNull()
   })
 
   it('falls back to the legacy column for the base unit only', () => {
     const noRows = fanta({ prices: [] })
-    expect(priceFor(noRows, DONA.id)).toBe(12000)
-    expect(priceFor(noRows, KAROBKA.id)).toBeNull()
+    expect(priceFor(noRows, DONA.id, UZS)).toBe(12000)
+    expect(priceFor(noRows, KAROBKA.id, UZS)).toBeNull()
   })
 })
 
