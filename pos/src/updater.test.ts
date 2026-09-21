@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { safeToReload, type TillActivity } from './updater'
+import { countsAsNewBuild, safeToReload, type TillActivity } from './updater'
 
 /**
  * When a new build is allowed to take over.
@@ -68,5 +68,49 @@ describe('safeToReload', () => {
   it('honours a caller-supplied quiet period', () => {
     expect(safeToReload(till({ msSinceInteraction: 3_000 }), 2_000)).toBe(true)
     expect(safeToReload(till({ msSinceInteraction: 3_000 }), 5_000)).toBe(false)
+  })
+})
+
+/**
+ * Telling a new build apart from this page simply being adopted.
+ *
+ * The worker now skips the wait and claims open pages outright, so the
+ * signal is the controller changing — and that same event fires on a
+ * first-ever visit, where reloading would bounce the cashier for nothing.
+ */
+describe('countsAsNewBuild', () => {
+  const signal = (over: Partial<Parameters<typeof countsAsNewBuild>[0]> = {}) =>
+    countsAsNewBuild({
+      hadControllerAtStart: true,
+      isWaiting: false,
+      controllerChanged: false,
+      ...over,
+    })
+
+  it('says no while nothing has happened', () => {
+    expect(signal()).toBe(false)
+  })
+
+  it('takes a worker parked in waiting', () => {
+    // skipWaiting should prevent this, but a browser can still defer
+    // activation while another tab holds the old worker.
+    expect(signal({ isWaiting: true })).toBe(true)
+  })
+
+  it('takes the controller being replaced', () => {
+    expect(signal({ controllerChanged: true })).toBe(true)
+  })
+
+  it('does NOT count the first worker claiming a fresh page', () => {
+    // A first-ever visit loads with no controller and is claimed seconds
+    // later. Treated as an update, every cashier gets bounced once on the
+    // first load after clearing site data — for nothing.
+    expect(signal({ hadControllerAtStart: false, controllerChanged: true })).toBe(false)
+  })
+
+  it('still takes a waiting worker on a page that started uncontrolled', () => {
+    // Something newer genuinely exists and has not been applied; how this
+    // page started is beside the point.
+    expect(signal({ hadControllerAtStart: false, isWaiting: true })).toBe(true)
   })
 })

@@ -70,6 +70,37 @@ export type TillActivity = {
 }
 
 /**
+ * Whether a service-worker event means a NEW BUILD is live, or is just this
+ * page being adopted for the first time.
+ *
+ * With `skipWaiting` the new worker activates on its own and claims the open
+ * pages, so the signal is `controllerchange` rather than a worker sitting in
+ * `waiting`. But that same event fires on a first-ever visit, the moment the
+ * freshly installed worker claims a page that loaded without one — and
+ * reloading there would bounce every cashier once on the first load after
+ * clearing site data, for no reason at all.
+ *
+ * The thing that tells them apart is whether this page was ALREADY under a
+ * worker when it started: if it was, the controller changing means it was
+ * replaced, which only happens when a new build shipped.
+ */
+export function countsAsNewBuild(signal: {
+  /** Was there a controller at page load? */
+  hadControllerAtStart: boolean
+  /** A worker is parked in `waiting` — belt and braces, see below. */
+  isWaiting: boolean
+  /** The controller changed since load. */
+  controllerChanged: boolean
+}): boolean {
+  // A waiting worker is unambiguous: something newer exists and has not been
+  // applied. Kept even though skipWaiting should prevent it, because a
+  // browser can still defer activation while another tab holds the old one.
+  if (signal.isWaiting) return true
+
+  return signal.controllerChanged && signal.hadControllerAtStart
+}
+
+/**
  * Whether now is a moment the cashier would not notice losing.
  *
  * Deliberately conservative about the screen and relaxed about the data:
@@ -128,6 +159,21 @@ export function watchForUpdates(): void {
   }
 
   let registration: ServiceWorkerRegistration | undefined
+  let controllerChanged = false
+
+  /*
+   * Whether this page started life under a worker.
+   *
+   * Read ONCE, before anything can claim it. On a first-ever visit there is
+   * no controller, the newly installed worker claims the page seconds
+   * later, and without this flag that would read as "a new build shipped"
+   * and bounce the cashier on their first load.
+   */
+  const hadControllerAtStart = navigator.serviceWorker.controller !== null
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    controllerChanged = true
+  })
 
   const markReady = () => {
     readySince ??= Date.now()
@@ -163,20 +209,34 @@ export function watchForUpdates(): void {
   })
 
   setInterval(() => {
-    // The registration is the truth, not the callback. Every way a worker
-    // can end up waiting — the event we caught, the one we missed, one
-    // installed by another tab on the same origin — looks the same here.
-    if (registration?.waiting) markReady()
+    // The registration and the controller are the truth, not the callback.
+    // Every way a new build can arrive — the event we caught, the one we
+    // missed, a worker another tab installed, one that skipped the wait and
+    // claimed us outright — looks the same here.
+    if (
+      countsAsNewBuild({
+        hadControllerAtStart,
+        isWaiting: registration?.waiting != null,
+        controllerChanged,
+      })
+    ) {
+      markReady()
+    }
 
     if (readySince === null || reloading) return
 
     if (safeToReload(readActivity(lastInteraction))) {
       reloading = true
-      // updateSW(true) tells the waiting worker to take over and reloads the
-      // page once it has. The cashier sees the till blink; the basket, the
-      // queue and the open tabs all come back, because none of them live in
-      // the page.
-      void updateSW(true)
+
+      // Two ways in, because both states are reachable: a worker that is
+      // still waiting has to be told to go, and one that already claimed
+      // this page just needs the page to pick up its assets.
+      if (registration?.waiting) void updateSW(true)
+      else window.location.reload()
+
+      // Either way the cashier sees the till blink; the basket, the queue
+      // and the open tabs all come back, because none of them live in the
+      // page.
       return
     }
 

@@ -22,10 +22,31 @@ export default defineConfig({
       // ends up on a page whose chunks no longer match the worker serving
       // them, until something forces a reload. Here the new worker waits, and
       // the page chooses the moment.
-      registerType: 'prompt',
-      // Registered from main.tsx instead, so the same code owns the timing.
-      // Left on 'auto' the plugin injects its own registerSW.js and the
-      // worker would be registered twice.
+      registerType: 'autoUpdate',
+      /*
+       * `autoUpdate` — the new worker activates immediately instead of
+       * waiting, and claims the open pages.
+       *
+       * This was 'prompt', which let src/updater.ts pick the moment the
+       * worker swapped. It was the tidier design and it had one fatal
+       * property: a till running a build with NO updater in it could never
+       * apply the waiting worker, because nothing on that page knew to tell
+       * it to go. Those tills sat on old code indefinitely and a refresh did
+       * not help them — measured, not guessed: two refreshes left the new
+       * worker in `waiting` and the page on the old bundle, and only closing
+       * the tab released it.
+       *
+       * Skipping the wait costs the clean swap: the new worker takes over
+       * while the old page is still running and `cleanupOutdatedCaches`
+       * drops the previous precache, so a page that asks for an asset it has
+       * not already loaded can miss. The blast radius here is small — the
+       * till ships one JS and one CSS bundle with no code-splitting, so the
+       * running page already holds its code, and what is left is the odd
+       * icon for the few seconds until the reload below fires.
+       *
+       * The page still chooses WHEN to reload. src/updater.ts waits for the
+       * till to be idle; all that changed is the signal it waits for.
+       */
       injectRegister: null,
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
