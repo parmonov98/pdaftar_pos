@@ -20,6 +20,8 @@ import { Clients, Products } from './Catalog'
 import { Devices } from './Devices'
 import { Drawer, type View } from './Drawer'
 import { keyOwner } from '../keys'
+import { sortRows, type SortState } from '../sorting'
+import { SortHeader } from './SortHeader'
 import { toast, type ToastKind } from '../toast'
 import { History } from './History'
 import { ProductBrowser, type BrowserHandle } from './ProductBrowser'
@@ -50,6 +52,9 @@ const QUICK_DISCOUNTS = [5, 10, 15, 20]
  */
 const SPLIT_KEY = 'pos.split_dir'
 
+/** The columns the basket can be ordered by. */
+type CartCol = 'name' | 'qty' | 'price' | 'total'
+
 export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) {
   const shopCurrency = me.shop.currency_id ?? 1
 
@@ -69,6 +74,16 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
    * every line, so it gets the room by default.
    */
   const [sideOpen, setSideOpen] = useState(false)
+
+  /**
+   * How the basket is ordered on screen.
+   *
+   * null — and it starts null — means scan order, which is the order the
+   * cashier put things down in and the order the customer watched them go
+   * in. Sorting is a VIEW: the draft keeps its own order, so clicking a
+   * column back to off restores it exactly.
+   */
+  const [cartSort, setCartSort] = useState<SortState<CartCol>>(null)
   const [clientPicker, setClientPicker] = useState(false)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
 
@@ -246,7 +261,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
   // ─── Derived sale state ───
 
-  const cart: CartLine[] = useMemo(() => {
+  const cartLines: CartLine[] = useMemo(() => {
     if (!active) return []
 
     return active.lines.map((line) => {
@@ -276,6 +291,26 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       }
     })
   }, [active, productsById])
+
+  // Sorted for display AND for the keyboard, from one array — the arrow keys
+  // walk what the eye sees, or Delete removes a different line from the one
+  // the cursor is on.
+  const cart: CartLine[] = useMemo(
+    () =>
+      sortRows(cartLines, cartSort, (line, key) => {
+        if (key === 'name') return line.product.name
+        if (key === 'qty') return line.quantity
+        if (key === 'price') return line.price
+        return lineTotal(line)
+      }),
+    [cartLines, cartSort],
+  )
+
+  // Switching to another sale tab starts it in its own scan order rather
+  // than inheriting a sort chosen for a different basket.
+  useEffect(() => {
+    setCartSort(null)
+  }, [activeId])
 
   /*
    * The whole till, on the keyboard.
@@ -643,7 +678,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
       />
 
       {view === 'history' && <History me={me} />}
-      {view === 'clients' && <Clients />}
+      {view === 'clients' && <Clients shopCurrencyId={me.shop.currency_id} />}
       {view === 'products' && <Products />}
       {view === 'devices' && <Devices me={me} />}
       {view === 'queue' && <Queue onClose={() => setView('sale')} inline />}
@@ -743,10 +778,29 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                 ref={cartPaneRef}
               >
             <div className="cart-head-row">
-              <span>MAHSULOT</span>
-              <span className="c">MIQDORI</span>
-              <span className="c">NARXI</span>
-              <span className="r">JAMI</span>
+              <SortHeader label="MAHSULOT" column="name" state={cartSort} onChange={setCartSort} />
+              <SortHeader
+                label="MIQDORI"
+                column="qty"
+                state={cartSort}
+                onChange={setCartSort}
+                align="center"
+              />
+              <SortHeader
+                label="NARXI"
+                column="price"
+                state={cartSort}
+                onChange={setCartSort}
+                align="center"
+              />
+              <SortHeader
+                label="JAMI"
+                column="total"
+                state={cartSort}
+                onChange={setCartSort}
+                align="right"
+                title="Uchinchi bosishda skanerlash tartibiga qaytadi"
+              />
               <span />
             </div>
 

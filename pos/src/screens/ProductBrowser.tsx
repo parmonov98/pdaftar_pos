@@ -1,6 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { formatMoney } from '../sales'
+import { sortRows, type SortState } from '../sorting'
+import { SortHeader } from './SortHeader'
 import type { Product } from '../db'
+
+/** The columns the product pane can be ordered by. */
+type BrowserCol = 'name' | 'qty' | 'price'
 
 /**
  * The half of the sale screen you pick from.
@@ -48,10 +53,11 @@ export const ProductBrowser = forwardRef<BrowserHandle, {
 }>(function ProductBrowser({ products, focused, onPick, onLeave }, ref) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
+  const [browserSort, setBrowserSort] = useState<SortState<BrowserCol>>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const rows = useMemo(() => {
+  const matches = useMemo(() => {
     const needle = query.trim().toLowerCase()
 
     return products
@@ -63,9 +69,23 @@ export const ProductBrowser = forwardRef<BrowserHandle, {
           (p.code ?? '').toLowerCase().includes(needle) ||
           (p.barcode ?? '').toLowerCase().includes(needle),
       )
-      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'uz'))
       .slice(0, 200)
   }, [products, query])
+
+  // Sorted AFTER the 200-row cap, deliberately: the cap is there so typing
+  // stays fast, and re-sorting the whole catalogue on every keystroke to
+  // pick a different 200 is the cost the cap exists to avoid. What the
+  // seller sorts is the list in front of them.
+  const rows = useMemo(
+    () =>
+      sortRows(matches, browserSort, (product, key) => {
+        if (key === 'name') return product.name
+        if (key === 'qty') return product.quantity
+        return product.price
+      }),
+    [matches, browserSort],
+  )
 
   // A filter that leaves the cursor past the end would make Enter add
   // whatever happened to be last, which is the wrong product at speed.
@@ -159,6 +179,26 @@ export const ProductBrowser = forwardRef<BrowserHandle, {
         />
         <span className="browser-count">{rows.length}</span>
       </div>
+
+      {rows.length > 0 && (
+        <div className="browser-head-row">
+          <SortHeader label="Mahsulot" column="name" state={browserSort} onChange={setBrowserSort} />
+          <SortHeader
+            label="Qoldiq"
+            column="qty"
+            state={browserSort}
+            onChange={setBrowserSort}
+            align="right"
+          />
+          <SortHeader
+            label="Narx"
+            column="price"
+            state={browserSort}
+            onChange={setBrowserSort}
+            align="right"
+          />
+        </div>
+      )}
 
       <div className="browser-list" ref={listRef}>
         {rows.length === 0 && (

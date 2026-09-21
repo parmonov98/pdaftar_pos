@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Client, type Currency, type Product } from '../db'
 import { formatMoney, owedIn, WALK_IN_NAME } from '../sales'
+import { sortRows, type SortState } from '../sorting'
 import { DebtPayment } from './DebtPayment'
 import { ProductForm } from './ProductForm'
+import { SortHeader } from './SortHeader'
 
 /**
  * Read-only browsing of the two lists the seller occasionally needs to look
@@ -15,9 +17,13 @@ import { ProductForm } from './ProductForm'
  * is a real question and it needs somewhere to be answered.
  */
 
+/** The columns Mahsulotlar can be ordered by. */
+type ProductCol = 'name' | 'qty' | 'price'
+
 export function Products() {
   const [query, setQuery] = useState('')
   const [onlyTracked, setOnlyTracked] = useState(false)
+  const [sort, setSort] = useState<SortState<ProductCol>>(null)
 
   // null = closed, 'new' = creating, Product = editing that one.
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
@@ -37,8 +43,22 @@ export function Products() {
           (p.code ?? '').toLowerCase().includes(needle) ||
           (p.barcode ?? '').toLowerCase().includes(needle),
       )
-      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+      // By name unless the seller has asked for something else. Alphabetical
+      // is the order you can find a thing in when you already know what it
+      // is called, which is the common case; the columns are for the other
+      // questions — what is nearly out, what is expensive.
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'uz'))
   }, [products, query, onlyTracked])
+
+  const sorted = useMemo(
+    () =>
+      sortRows(rows, sort, (product, key) => {
+        if (key === 'name') return product.name
+        if (key === 'qty') return product.quantity
+        return product.price
+      }),
+    [rows, sort],
+  )
 
   const outOfStock = rows.filter((p) => p.quantity !== null && p.quantity <= 0).length
 
@@ -68,7 +88,26 @@ export function Products() {
         )}
       </div>
 
+      {/* Hidden when there is nothing to order — a header over an empty list
+          is four controls that do nothing. */}
       <div className="view-body">
+        {rows.length > 0 && (
+          <div className="list-head">
+            {/* Three headings for three columns. The code sits UNDER the name
+                rather than beside it, so a "Kod" heading here would point at
+                nothing — the row has no such column to head. */}
+            <SortHeader label="Nomi" column="name" state={sort} onChange={setSort} />
+            <SortHeader
+              label="Qoldiq"
+              column="qty"
+              state={sort}
+              onChange={setSort}
+              align="right"
+              title="Hisobga olinmagan mahsulotlar oxirida"
+            />
+            <SortHeader label="Narx" column="price" state={sort} onChange={setSort} align="right" />
+          </div>
+        )}
         {rows.length === 0 && (
           <div className="cart-empty">
             {products.length === 0 ? (
@@ -91,7 +130,7 @@ export function Products() {
           </div>
         )}
 
-        {rows.map((product) => {
+        {sorted.map((product) => {
           const qty = product.quantity
           const state = qty === null ? '' : qty <= 0 ? 'out' : qty <= (product.low_stock_threshold ?? 0) ? 'low' : ''
 
@@ -113,7 +152,11 @@ export function Products() {
                     most of a typical catalogue as out of stock. */}
                 {qty === null ? '—' : formatMoney(qty)}
               </span>
-              <span className="amt">{formatMoney(product.price ?? 0)}</span>
+              {/* A missing price is not zero. Printed as 0 it reads as free,
+                  in the column somebody scans to find what is mispriced. */}
+              <span className="amt">
+                {product.price == null ? '—' : formatMoney(product.price)}
+              </span>
             </div>
           )
         })}
@@ -129,9 +172,13 @@ export function Products() {
   )
 }
 
-export function Clients() {
+/** The columns Mijozlar can be ordered by. */
+type ClientCol = 'name' | 'debt'
+
+export function Clients({ shopCurrencyId }: { shopCurrencyId: number | null }) {
   const [query, setQuery] = useState('')
   const [paying, setPaying] = useState<Client | null>(null)
+  const [sort, setSort] = useState<SortState<ClientCol>>(null)
 
   const clients = useLiveQuery(() => db.clients.toArray(), [], [] as Client[])
   const currencies = useLiveQuery(() => db.currencies.toArray(), [], [] as Currency[])
@@ -150,8 +197,28 @@ export function Clients() {
           c.name.toLowerCase().includes(needle) ||
           (digits !== '' && (c.phone_number ?? '').replace(/\D/g, '').includes(digits)),
       )
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => a.name.localeCompare(b.name, 'uz'))
   }, [clients, query])
+
+  /**
+   * Ordered by whichever column was clicked.
+   *
+   * "Qarz" sorts by the balance in the SHOP'S OWN currency and nothing else.
+   * A debt of $11 and a debt of 12,000 so'm cannot be put in one order
+   * without an exchange rate this till does not have, and ranking them by
+   * the bare number would put the dollar debt near the bottom of "who owes
+   * most" — which is the same class of mistake as adding them together. A
+   * client who owes only in another currency has nothing in this column, so
+   * they sort to the end, and their badge still shows what they owe.
+   */
+  const sorted = useMemo(
+    () =>
+      sortRows(rows, sort, (client, key) => {
+        if (key === 'name') return client.name
+        return shopCurrencyId === null ? null : (client.balances?.[shopCurrencyId] ?? null)
+      }),
+    [rows, sort, shopCurrencyId],
+  )
 
   return (
     <div className="view">
@@ -196,6 +263,19 @@ export function Clients() {
       </div>
 
       <div className="view-body">
+        {rows.length > 0 && (
+          <div className="list-head">
+            <SortHeader label="Ism" column="name" state={sort} onChange={setSort} />
+            <SortHeader
+              label="Qarz"
+              column="debt"
+              state={sort}
+              onChange={setSort}
+              align="right"
+              title="Do'kon valyutasidagi qarz bo'yicha. Boshqa valyutadagilar oxirida."
+            />
+          </div>
+        )}
         {rows.length === 0 && (
           <div className="cart-empty">
             {clients.length === 0
@@ -204,7 +284,7 @@ export function Clients() {
           </div>
         )}
 
-        {rows.map((client) => (
+        {sorted.map((client) => (
           <div
             className="list-row tappable"
             key={client.id}

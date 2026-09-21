@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { fetchRecentSales, type MeResponse, type RecentSale } from '../api'
 import { db, type Currency } from '../db'
 import { cancelBlocker, cancelEffects, cancelSale, formatMoney } from '../sales'
+import { sortRows, type SortState } from '../sorting'
 import { pullAll } from '../sync'
 import { toast } from '../toast'
+import { SortHeader } from './SortHeader'
 import { receiptFromHistory, type Receipt } from '../receipt'
 import { ReceiptView } from './Receipt'
 
@@ -21,8 +23,13 @@ import { ReceiptView } from './Receipt'
  * operation, the service and the ledger reversal all existed and nothing on
  * screen reached them.
  */
+/** The columns Tarix can be ordered by. */
+type SaleCol = 'when' | 'seller' | 'client' | 'total'
+
 export function History({ me }: { me: MeResponse }) {
   const [sales, setSales] = useState<RecentSale[]>([])
+  /** null = newest first, which is what the server already sent. */
+  const [sort, setSort] = useState<SortState<SaleCol>>(null)
   const [mineOnly, setMineOnly] = useState(false)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +79,35 @@ export function History({ me }: { me: MeResponse }) {
       return acc
     }, new Map())
 
+  const rows = useMemo(() => {
+    const ordered = sortRows(sales, sort, (sale, key) => {
+      if (key === 'when') return sale.created_at
+      if (key === 'seller') return sale.seller_name
+      // Cash sales have no customer. They collect at the end rather than
+      // under one letter, because "Naqd xaridor" is not a name and sorting
+      // a hundred of them into the N's buries the customers you are
+      // looking for.
+      if (key === 'client') return sale.client_name
+      return sale.total
+    })
+
+    /*
+     * Amounts are ordered WITHIN a currency, never across one.
+     *
+     * This shop's own Tarix has 589,000 UZS and 620,012 USD sitting in the
+     * same list. Ranked by the bare number, an eleven-dollar sale files
+     * below a twelve-thousand-so'm one — the same mistake as adding them up,
+     * which the day's-takings line already refuses to make. A second stable
+     * pass by currency leaves each currency's sales grouped and each group
+     * ordered by size.
+     */
+    if (sort?.key !== 'total') return ordered
+
+    return [...ordered].sort(
+      (a, b) => (a.currency_id ?? 0) - (b.currency_id ?? 0),
+    )
+  }, [sales, sort])
+
   // A refreshed list must not leave the cursor pointing past the end.
   useEffect(() => {
     setCursor((c) => Math.max(0, Math.min(c, sales.length - 1)))
@@ -108,11 +144,11 @@ export function History({ me }: { me: MeResponse }) {
         return
       }
 
-      if (sales.length === 0) return
+      if (rows.length === 0) return
 
       if (event.key === 'ArrowDown') {
         event.preventDefault()
-        setCursor((c) => Math.min(c + 1, sales.length - 1))
+        setCursor((c) => Math.min(c + 1, rows.length - 1))
         return
       }
 
@@ -122,7 +158,7 @@ export function History({ me }: { me: MeResponse }) {
         return
       }
 
-      const sale = sales[cursor]
+      const sale = rows[cursor]
       if (!sale) return
 
       if (event.key === 'Enter') {
@@ -142,14 +178,14 @@ export function History({ me }: { me: MeResponse }) {
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sales, cursor, cancelling, receipt])
+  }, [rows, cursor, cancelling, receipt])
 
   // Keep the highlighted row on screen when the arrows walk off the edge.
   useEffect(() => {
     rowsRef.current
       ?.querySelector('[data-cursor="true"]')
       ?.scrollIntoView({ block: 'nearest' })
-  }, [cursor, sales])
+  }, [cursor, rows])
 
   async function confirmCancel(sale: RecentSale) {
     const outcome = await cancelSale(sale, code(sale.currency_id))
@@ -217,11 +253,27 @@ export function History({ me }: { me: MeResponse }) {
       )}
 
       <div className="view-body" ref={rowsRef}>
+        {!error && sales.length > 0 && (
+          <div className="list-head hist-head">
+            <SortHeader label="Mijoz" column="client" state={sort} onChange={setSort} />
+            <SortHeader label="Sotuvchi" column="seller" state={sort} onChange={setSort} />
+            <SortHeader label="Vaqti" column="when" state={sort} onChange={setSort} />
+            <SortHeader
+              label="Summa"
+              column="total"
+              state={sort}
+              onChange={setSort}
+              align="right"
+              title="Har bir valyuta alohida guruhlanadi — so'm dollar bilan solishtirilmaydi"
+            />
+            <span className="hist-head-pad" />
+          </div>
+        )}
         {!busy && !error && sales.length === 0 && (
           <div className="cart-empty">Hozircha sotuv yo'q</div>
         )}
 
-        {sales.map((sale, index) => (
+        {rows.map((sale, index) => (
           <div
             className={`hist-row ${sale.is_cancelled ? 'cancelled' : ''} ${index === cursor ? 'on' : ''}`}
             data-cursor={index === cursor}
