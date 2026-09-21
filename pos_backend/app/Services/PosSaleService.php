@@ -126,6 +126,8 @@ class PosSaleService {
             $sale = Sale::create([
                 'shop_id' => $terminal->shop_id,
                 'pos_terminal_id' => $terminal->id,
+                // Set only when the till split one basket across currencies.
+                'sale_group_id' => $payload['sale_group_id'] ?? null,
                 'client_id' => $clientId,
                 // The cashier, captured now. Deriving it later from the
                 // terminal would name whoever signed in most recently.
@@ -224,23 +226,43 @@ class PosSaleService {
                 throw new BusinessException('Sotuv topilmadi');
             }
 
-            if ($sale->isCancelled()) {
-                // Not an error: a till retrying a cancel it already made must
-                // get the same answer, not a refusal.
-                return $sale->load('items');
+            /*
+             * A basket that was split across currencies is cancelled whole.
+             *
+             * The customer walked in once and is walking out with nothing;
+             * undoing the so'm half and leaving the dollar half standing
+             * would be a sale nobody made, and the cashier pressed cancel on
+             * what they see as ONE row in Tarix. The group is the basket, so
+             * the group is what comes back.
+             */
+            $basket = $sale->sale_group_id === null
+                ? collect([$sale])
+                : Sale::query()
+                    ->where('shop_id', $terminal->shop_id)
+                    ->where('sale_group_id', $sale->sale_group_id)
+                    ->lockForUpdate()
+                    ->get();
+
+            foreach ($basket as $part) {
+                if ($part->isCancelled()) {
+                    // Not an error: a till retrying a cancel it already made
+                    // must get the same answer, not a refusal.
+                    continue;
+                }
+
+                $this->stock->reverseFor('sale', $part->id);
+
+                $part->update([
+                    'status' => Sale::STATUS_CANCELLED,
+                    'cancelled_at' => $occurredAt ?? now(),
+                ]);
+
+                // The debt went back with the goods, so the badge has to
+                // move too.
+                $this->touchClient($part->client_id);
             }
 
-            $this->stock->reverseFor('sale', $sale->id);
-
-            $sale->update([
-                'status' => Sale::STATUS_CANCELLED,
-                'cancelled_at' => $occurredAt ?? now(),
-            ]);
-
-            // The debt went back with the goods, so the badge has to move too.
-            $this->touchClient($sale->client_id);
-
-            return $sale->load('items');
+            return $sale->refresh()->load('items');
         });
     }
 }

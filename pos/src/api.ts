@@ -371,7 +371,37 @@ export type RecentSale = {
   client_name: string | null
   client_phone: string | null
   seller_name: string | null
+  /**
+   * True only when EVERY half of the basket is cancelled.
+   *
+   * A basket half-undone is not an undone basket: the tag, the greying and
+   * the day's takings all key on this, and calling it cancelled while the
+   * other half stands would drop live money out of the day's total.
+   */
   is_cancelled: boolean
+  /**
+   * The money, one entry per currency in the basket.
+   *
+   * A basket that spanned two currencies is two sales on the server — a
+   * sale has one currency all the way down to the debt it leaves behind —
+   * shown here as one row with two totals. Never summed: 12 000 so'm plus
+   * 6 dollars is not 12 006 of anything.
+   *
+   * Always at least one entry, so the ordinary single-currency sale reads
+   * through the same path.
+   */
+  totals: Array<{
+    sale_id: number
+    currency_id: number | null
+    total: number
+    paid_amount: number
+    discount_amount: number
+    is_cancelled: boolean
+  }>
+  /** Every sale id in the basket. `id` is the first of them. */
+  sale_ids: number[]
+  /** Set only when the basket was split across currencies. */
+  sale_group_id: string | null
   /**
    * Repayments taken against this sale AFTER it was rung up.
    *
@@ -391,6 +421,8 @@ export type RecentSale = {
     unit_name?: string | null
     quantity: number | null
     total: number
+    /** Which half of a mixed basket this line came from. */
+    currency_id?: number | null
   }>
 }
 

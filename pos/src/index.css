@@ -355,7 +355,13 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .hist-main:hover { background: var(--panel-2); }
 .hist-main .nm { display: block; font-weight: 600; }
 .hist-main .sub { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
-.hist-main .amt { color: var(--accent); font-weight: 700; white-space: nowrap; }
+.hist-main .amt { color: var(--accent); font-weight: 700; white-space: nowrap; text-align: right; }
+/* A basket that spanned two currencies shows both, stacked. Run together on
+   one line they read as "12,000 UZS6 USD" — one number with a typo in it. */
+.hist-main .amt-part { display: block; }
+/* The cancelled half of a half-cancelled basket: still shown, because the
+   customer's money went somewhere, but plainly not live. */
+.hist-main .amt-part.off { opacity: 0.45; text-decoration: line-through; font-weight: 600; }
 .hist-items { padding: 4px 12px 12px 12px; background: var(--panel-2); }
 .hist-item {
   display: flex; gap: 10px; padding: 5px 0; font-size: 13.5px;
@@ -422,7 +428,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
 .cart-body { flex: 1; overflow-y: auto; }
 
 .cart-row { padding-top: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.cart-row .cell.c { display: flex; justify-content: center; }
+/* Stacked, not side by side: the unit belongs UNDER the quantity, with the
+   whole column's width to spell "karobka ×12" out in. Laid out as a row it
+   sat back beside the number, which is the cramp this change undoes. */
+.cart-row .cell.c { display: flex; flex-direction: column; justify-content: center; }
 .cart-row .cell.r { text-align: right; }
 .cart-row .name .nm { font-weight: 700; font-size: 15px; }
 .cart-row .name .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
@@ -893,26 +902,14 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .cart-row .cell.c { justify-content: stretch; }
   .cart-row .stepper { width: 100%; }
 
-  /* The number takes the slack; the steppers and the unit keep their size.
-     Both halves of that matter: uncapped, the select grew to 331px and left
-     the quantity 18, which is the same unreadable cell as before with the
-     blame moved. min-width on the number is what actually holds the line. */
+  /* The number takes the slack. The unit no longer competes for this row —
+     it has its own line underneath — so only the quantity needs holding. */
   .cart-row .cell:nth-child(2) .stepper { overflow: hidden; }
   .cart-row .cell:nth-child(2) .stepper input {
     flex: 1 1 auto; min-width: 56px; width: auto;
   }
-  .cart-row .cell:nth-child(2) .unit-select {
-    flex: 0 1 auto; max-width: 110px; text-align: right;
-  }
 }
 
-/* The unit a line is sold in. Sits inside the stepper where the plain unit
-   label used to, so a one-unit product and a multi-unit one line up. */
-.unit-select {
-  border: none; background: none; padding: 0 2px;
-  font: inherit; font-size: 12px; color: var(--muted);
-  max-width: 96px; cursor: pointer; min-height: 0;
-}
 .unit-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
 /* What a customer owes, next to their name. Debt and credit are different
@@ -1295,45 +1292,32 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .hist-head .hist-head-pad { width: 44px; }
 }
 
-/* ─── Unit picker and per-line currency ─── */
+/* ─── Unit selector and per-line currency ─── */
 
 /*
- * The unit sat inside the quantity stepper as a <select>, about 70px wide:
- * "karobka" clipped to "karob…", changing it meant opening a drop-down, and
- * nothing anywhere said that a karobka was twelve. Which unit is being sold
- * decides the price AND how much stock leaves the shelf, so it gets a row of
- * its own under the stepper, one button per way of selling the product, with
- * the conversion written on it.
+ * The unit, on its own full-width line under the stepper.
+ *
+ * It used to be a <select> wedged INTO the stepper beside the number, about
+ * 70px wide: "karobka" clipped to "karob…" and nothing anywhere said that a
+ * karobka was twelve. Still a select — a cashier knows what one does and it
+ * opens from the keyboard — but given the whole width of the column, and
+ * each option now carries its conversion.
  */
-.unit-pick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.unit-select {
+  width: 100%;
   margin-top: 6px;
-  justify-content: center;
-}
-.unit-pick.one { color: var(--muted); font-size: 12px; }
-
-.unit-pick button {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 4px 9px;
+  padding: 5px 8px;
   font-size: 12.5px;
-  line-height: 1.2;
-  border-radius: 999px;
   background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
-.unit-pick button.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
-  font-weight: 600;
+.unit-one {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
 }
-.unit-pick button.on:hover:not(:disabled) { background: var(--accent-hover); }
-/* The conversion rides along quieter than the name — it is reference, not
-   the thing being chosen. */
-.unit-pick .u-conv { font-size: 11px; opacity: 0.75; }
 
 /* One tap cycles the shop's currencies. A drop-down for two options is a
    drop-down too many on a screen where the hand is on the keys. */

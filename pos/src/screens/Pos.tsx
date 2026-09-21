@@ -1075,30 +1075,28 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                         written on it.
                       */}
                       {units.length > 1 ? (
-                        <div className="unit-pick" role="group" aria-label="Birlik">
+                        <select
+                          className="unit-select"
+                          value={line.productUnitId ?? ''}
+                          aria-label="Birlik"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            setCartCursor(index)
+                            setLineUnit(
+                              line.product.id,
+                              e.target.value === '' ? null : Number(e.target.value),
+                            )
+                          }}
+                        >
                           {units.map((u) => (
-                            <button
-                              key={u.id}
-                              type="button"
-                              className={line.productUnitId === u.id ? 'on' : ''}
-                              aria-pressed={line.productUnitId === u.id}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setCartCursor(index)
-                                setLineUnit(line.product.id, u.id)
-                              }}
-                            >
-                              <span className="u-name">{unitName(u.unit_id)}</span>
-                              {conversionLabel(u) && (
-                                <span className="u-conv">{conversionLabel(u)}</span>
-                              )}
-                            </button>
+                            <option key={u.id} value={u.id}>
+                              {unitName(u.unit_id)}
+                              {conversionLabel(u) ? ` ${conversionLabel(u)}` : ''}
+                            </option>
                           ))}
-                        </div>
+                        </select>
                       ) : (
-                        <div className="unit-pick one">
-                          <span className="unit">{unitName(line.product.unit_id)}</span>
-                        </div>
+                        <div className="unit-one">{unitName(line.product.unit_id)}</div>
                       )}
                     </div>
 

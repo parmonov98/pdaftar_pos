@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Pos\Constants\PosScope;
 use Pos\Exceptions\BusinessException;
+use Pos\Models\Currency;
 use Pos\Models\PosOperation;
 use Pos\Models\PosTerminal;
 use Pos\Models\Product;
@@ -478,5 +479,131 @@ class SaleTest extends TestCase {
         $this->assertTrue($cancelled['is_cancelled']);
         $this->assertSame(Sale::STATUS_CANCELLED, $cancelled['status']);
         $this->assertNotNull($cancelled['cancelled_at']);
+    }
+
+    /**
+     * A basket that spanned two currencies.
+     *
+     * It cannot be one `sales` row — a sale has one currency all the way
+     * down to the debt it leaves behind — so the till writes one per
+     * currency and stamps them with a shared group. Tarix has to hand that
+     * back as ONE entry, because the customer had one visit.
+     */
+    private function mixedBasket(string $group = 'basket-1'): array {
+        $usd = Currency::create(['code' => 'USD', 'name' => 'Dollar', 'sign' => '$']);
+
+        $som = app(PosSaleService::class)->create($this->terminal(), [
+            'items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]],
+            'paid_amount' => 12000,
+            'sale_group_id' => $group,
+        ], null, $this->user->id);
+
+        $dollars = app(PosSaleService::class)->create($this->terminal(), [
+            'items' => [['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 6]],
+            'paid_amount' => 6,
+            'currency_id' => $usd->id,
+            'sale_group_id' => $group,
+        ], null, $this->user->id);
+
+        return [$som, $dollars];
+    }
+
+    public function test_a_mixed_basket_is_one_row_in_the_history(): void {
+        [$som, $dollars] = $this->mixedBasket();
+
+        $rows = $this->withToken($this->tokenFor(PosScope::CATALOG_READ))
+            ->getJson('/api/pos/v1/sales/recent')
+            ->json('data');
+
+        $this->assertCount(1, $rows, 'two sales, one basket, one row');
+
+        $row = $rows[0];
+        $this->assertSame($som->id, $row['id']);
+        $this->assertSame([$som->id, $dollars->id], $row['sale_ids']);
+        $this->assertSame('basket-1', $row['sale_group_id']);
+
+        // Two totals, never a sum: 12 006 is not an amount of money.
+        $this->assertCount(2, $row['totals']);
+        $this->assertSame(12000.0, (float) $row['totals'][0]['total']);
+        $this->assertSame(6.0, (float) $row['totals'][1]['total']);
+
+        // Both halves' lines, under the one entry.
+        $this->assertCount(2, $row['items']);
+    }
+
+    public function test_an_ordinary_sale_is_still_its_own_row(): void {
+        $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 12000]]);
+        $this->sell([['product_id' => $this->cola->id, 'quantity' => 2, 'price' => 12000]]);
+
+        $rows = $this->withToken($this->tokenFor(PosScope::CATALOG_READ))
+            ->getJson('/api/pos/v1/sales/recent')
+            ->json('data');
+
+        // No group id means no grouping — which is every sale written before
+        // this existed and nearly every one after.
+        $this->assertCount(2, $rows);
+        $this->assertCount(1, $rows[0]['totals']);
+        $this->assertNull($rows[0]['sale_group_id']);
+    }
+
+    /** Cancelling the row the cashier sees undoes the whole basket. */
+    public function test_cancelling_one_half_of_a_basket_cancels_both(): void {
+        [$som, $dollars] = $this->mixedBasket();
+        $this->assertSame(8.0, (float) $this->cola->fresh()->quantity);
+
+        app(PosSaleService::class)->cancel($this->terminal(), $som->id, null);
+
+        // Undoing the so'm half and leaving the dollar half standing would
+        // be a sale nobody made.
+        $this->assertSame(Sale::STATUS_CANCELLED, $som->fresh()->status);
+        $this->assertSame(Sale::STATUS_CANCELLED, $dollars->fresh()->status);
+        $this->assertSame(10.0, (float) $this->cola->fresh()->quantity);
+    }
+
+    public function test_cancelling_from_the_other_half_works_the_same(): void {
+        [$som, $dollars] = $this->mixedBasket();
+
+        app(PosSaleService::class)->cancel($this->terminal(), $dollars->id, null);
+
+        $this->assertSame(Sale::STATUS_CANCELLED, $som->fresh()->status);
+        $this->assertSame(Sale::STATUS_CANCELLED, $dollars->fresh()->status);
+    }
+
+    /**
+     * A basket with one half cancelled is NOT a cancelled basket.
+     *
+     * The tag, the greying and the day's takings all key on this flag, and
+     * calling it cancelled while the other half still stands would drop live
+     * money out of the day's total.
+     */
+    public function test_a_half_cancelled_basket_does_not_read_as_cancelled(): void {
+        [$som] = $this->mixedBasket();
+
+        // Straight to the row, bypassing the service, to build the state a
+        // partial failure could leave behind.
+        Sale::query()->whereKey($som->id)->update([
+            'status' => Sale::STATUS_CANCELLED,
+            'cancelled_at' => now(),
+        ]);
+
+        $row = $this->withToken($this->tokenFor(PosScope::CATALOG_READ))
+            ->getJson('/api/pos/v1/sales/recent')
+            ->json('data.0');
+
+        $this->assertFalse($row['is_cancelled']);
+        $this->assertTrue($row['totals'][0]['is_cancelled']);
+        $this->assertFalse($row['totals'][1]['is_cancelled']);
+    }
+
+    /** Two baskets and a plain sale do not bleed into each other. */
+    public function test_separate_baskets_stay_separate(): void {
+        $this->mixedBasket('basket-1');
+        $this->sell([['product_id' => $this->cola->id, 'quantity' => 1, 'price' => 5000]]);
+
+        $rows = $this->withToken($this->tokenFor(PosScope::CATALOG_READ))
+            ->getJson('/api/pos/v1/sales/recent')
+            ->json('data');
+
+        $this->assertCount(2, $rows);
     }
 }

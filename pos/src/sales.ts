@@ -194,11 +194,24 @@ export async function submitSale(
 
   if (planned.length === 0) throw new Error('Savdo summasi 0 dan katta bo\'lishi kerak')
 
+  /*
+   * What ties the halves together.
+   *
+   * Minted once, here, at the cashier's action — like the operation ids
+   * beside it — so a retry of a half-sent basket re-uses the same group
+   * rather than splitting one visit into two. Only for a basket that
+   * actually spans currencies: a single-currency sale has no group, which
+   * keeps its payload byte-identical to what the server has always been
+   * sent.
+   */
+  const groupId = planned.length > 1 ? crypto.randomUUID() : null
+
   const parts: SalePart[] = []
 
   for (const plan of planned) {
     const payload = {
       currency_id: plan.currencyId,
+      ...(groupId === null ? {} : { sale_group_id: groupId }),
       client_id: payment.clientId,
       payment_type: plan.paid > 0 ? payment.paymentType : null,
       paid_amount: plan.paid > 0 ? plan.paid : null,
@@ -314,6 +327,13 @@ export type CancellableSale = {
   repaid_amount?: number
   is_cancelled: boolean
   kind?: 'income' | 'debt'
+  /**
+   * One entry per currency in the basket.
+   *
+   * Absent for anything that predates mixed baskets, which is treated as
+   * the single-currency sale it is.
+   */
+  totals?: Array<{ currency_id: number | null; total: number; paid_amount: number }>
 }
 
 /**
@@ -362,16 +382,39 @@ export function cancelBlocker(sale: CancellableSale, online: boolean): string | 
  * has to be handed back, and a repayment made against a nasiya sale turns
  * into credit the shop owes.
  */
-export function cancelEffects(sale: CancellableSale, currency: string): string[] {
-  const money = (value: number) => `${formatMoney(value)} ${currency}`.trim()
+export function cancelEffects(
+  sale: CancellableSale,
+  currency: string,
+  /** Currency code per id, for a basket that spans more than one. */
+  codeOf: (currencyId: number | null) => string = () => currency,
+): string[] {
   const effects = ['Mahsulotlar omborga qaytariladi.']
 
-  const owed = round2(sale.total - sale.paid_amount)
-  if (owed > 0) effects.push(`Mijoz qarzidan ${money(owed)} o'chiriladi.`)
+  /*
+   * Every currency in the basket, each spelled out on its own.
+   *
+   * A basket split across currencies is several sales on the server and is
+   * cancelled whole — so the cashier has to be told what comes back in each
+   * currency, not one figure that mixes them.
+   */
+  const parts =
+    sale.totals && sale.totals.length > 0
+      ? sale.totals
+      : [{ currency_id: null, total: sale.total, paid_amount: sale.paid_amount }]
 
-  if (sale.paid_amount > 0) {
-    effects.push(`Kassadan mijozga ${money(sale.paid_amount)} qaytarish kerak.`)
+  for (const part of parts) {
+    const code = sale.totals && sale.totals.length > 1 ? codeOf(part.currency_id) : currency
+    const money = (value: number) => `${formatMoney(value)} ${code}`.trim()
+
+    const owed = round2(part.total - part.paid_amount)
+    if (owed > 0) effects.push(`Mijoz qarzidan ${money(owed)} o'chiriladi.`)
+
+    if (part.paid_amount > 0) {
+      effects.push(`Kassadan mijozga ${money(part.paid_amount)} qaytarish kerak.`)
+    }
   }
+
+  const money = (value: number) => `${formatMoney(value)} ${currency}`.trim()
 
   // Repayments taken AFTER the sale are not undone by cancelling it — they
   // stay on the client as credit. The shop owes that money back, and the only

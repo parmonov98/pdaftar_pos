@@ -14,7 +14,7 @@ class Sale extends Model {
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'shop_id', 'pos_terminal_id', 'user_id', 'client_id', 'currency_id',
+        'shop_id', 'pos_terminal_id', 'sale_group_id', 'user_id', 'client_id', 'currency_id',
         'subtotal', 'discount_amount', 'total', 'paid_amount',
         'payment_type', 'note', 'status', 'cancelled_at', 'occurred_at',
     ];

@@ -73,9 +73,13 @@ export function History({ me }: { me: MeResponse }) {
    * day wrong every time it looked.
    */
   const dayTotals = sales
-    .filter((s) => !s.is_cancelled && isToday(s.created_at))
-    .reduce<Map<number | null, number>>((acc, s) => {
-      acc.set(s.currency_id, (acc.get(s.currency_id) ?? 0) + s.total)
+    .filter((s) => isToday(s.created_at))
+    // Part by part, because a basket can hold two currencies and can have
+    // one half cancelled — the live half still belongs in the day.
+    .flatMap((s) => s.totals)
+    .filter((part) => !part.is_cancelled)
+    .reduce<Map<number | null, number>>((acc, part) => {
+      acc.set(part.currency_id, (acc.get(part.currency_id) ?? 0) + part.total)
       return acc
     }, new Map())
 
@@ -88,7 +92,10 @@ export function History({ me }: { me: MeResponse }) {
       // a hundred of them into the N's buries the customers you are
       // looking for.
       if (key === 'client') return sale.client_name
-      return sale.total
+      // The basket's first currency. Ordering a two-currency basket by one
+      // of its totals is a compromise, but the alternative is ranking it by
+      // a sum that does not exist.
+      return sale.totals[0]?.total ?? 0
     })
 
     /*
@@ -104,7 +111,7 @@ export function History({ me }: { me: MeResponse }) {
     if (sort?.key !== 'total') return ordered
 
     return [...ordered].sort(
-      (a, b) => (a.currency_id ?? 0) - (b.currency_id ?? 0),
+      (a, b) => (a.totals[0]?.currency_id ?? 0) - (b.totals[0]?.currency_id ?? 0),
     )
   }, [sales, sort])
 
@@ -310,9 +317,19 @@ export function History({ me }: { me: MeResponse }) {
               </span>
               {/* With the currency, always. Two rows reading "11" and
                   "12,000" are the same size on screen and are not remotely
-                  the same amount of money. */}
+                  the same amount of money.
+
+                  One line per currency for a basket that spanned two — the
+                  sum of them would be a number that is not money. */}
               <span className="amt">
-                {formatMoney(sale.total)} {code(sale.currency_id)}
+                {sale.totals.map((part) => (
+                  <span
+                    key={part.sale_id}
+                    className={`amt-part ${part.is_cancelled ? 'off' : ''}`}
+                  >
+                    {formatMoney(part.total)} {code(part.currency_id)}
+                  </span>
+                ))}
               </span>
             </button>
 
@@ -358,7 +375,12 @@ export function History({ me }: { me: MeResponse }) {
                     <span className="muted">
                       {item.quantity === null ? '—' : formatMoney(item.quantity)} ×
                     </span>
-                    <span>{formatMoney(item.total)}</span>
+                    <span>
+                      {formatMoney(item.total)}
+                      {/* Only when the basket holds more than one, where a
+                          bare number would be ambiguous. */}
+                      {sale.totals.length > 1 && ` ${code(item.currency_id ?? null)}`}
+                    </span>
                   </div>
                 ))}
                 {sale.is_credit && (
@@ -377,6 +399,7 @@ export function History({ me }: { me: MeResponse }) {
         <CancelSaleDialog
           sale={cancelling}
           currency={code(cancelling.currency_id)}
+          codeOf={code}
           online={online}
           onConfirm={() => confirmCancel(cancelling)}
           onClose={() => setCancelling(null)}
@@ -398,12 +421,15 @@ export function History({ me }: { me: MeResponse }) {
 function CancelSaleDialog({
   sale,
   currency,
+  codeOf,
   online,
   onConfirm,
   onClose,
 }: {
   sale: RecentSale
   currency: string
+  /** Currency code per id, for a basket that spans more than one. */
+  codeOf: (currencyId: number | null) => string
   online: boolean
   onConfirm: () => Promise<void>
   onClose: () => void
@@ -456,12 +482,22 @@ function CancelSaleDialog({
             </span>
             <span className="muted">{sale.kind === 'income' ? 'naqd' : 'nasiya'}</span>
           </div>
-          <div className="row grand">
-            <span>Summa</span>
-            <span>
-              {formatMoney(sale.total)} {currency}
-            </span>
-          </div>
+          {/* One line per currency. A basket that spanned two is cancelled
+              whole — the customer walked in once — so both are named. */}
+          {sale.totals.map((part) => (
+            <div className="row grand" key={part.sale_id}>
+              <span>Summa</span>
+              <span>
+                {formatMoney(part.total)} {codeOf(part.currency_id)}
+              </span>
+            </div>
+          ))}
+          {sale.totals.length > 1 && (
+            <div className="hint">
+              Bu savat {sale.totals.length} ta valyutada yozilgan — hammasi
+              birga bekor qilinadi.
+            </div>
+          )}
         </div>
 
         {/* The first two lines of a receipt, so the cashier can see this is
@@ -488,7 +524,7 @@ function CancelSaleDialog({
         ) : (
           <div className="notice warn">
             <ul style={{ margin: 0, paddingInlineStart: 18 }}>
-              {cancelEffects(sale, currency).map((effect) => (
+              {cancelEffects(sale, currency, codeOf).map((effect) => (
                 <li key={effect}>{effect}</li>
               ))}
             </ul>

@@ -247,6 +247,34 @@ describe('cancelEffects', () => {
   it('says nothing about a repayment when there was none', () => {
     expect(joined(sale({ repaid_amount: 0 }))).not.toContain('haqdorlik')
   })
+
+  it('spells out every currency of a mixed basket', () => {
+    // Cancelled whole — the customer walked in once — so the cashier has to
+    // be told what comes back in each currency rather than one figure that
+    // mixes them.
+    const text = cancelEffects(
+      sale({
+        totals: [
+          { currency_id: 1, total: 12000, paid_amount: 12000 },
+          { currency_id: 2, total: 6, paid_amount: 0 },
+        ],
+      }),
+      'UZS',
+      (id) => (id === 2 ? 'USD' : 'UZS'),
+    ).join(' | ')
+
+    expect(text).toContain(`Kassadan mijozga ${formatMoney(12000)} UZS`)
+    expect(text).toContain(`qarzidan ${formatMoney(6)} USD o'chiriladi`)
+    // And never a combined figure.
+    expect(text).not.toContain('12 006')
+    expect(text).not.toContain('12006')
+  })
+
+  it('falls back to the sale own figures when there are no parts', () => {
+    // Anything written before mixed baskets existed has no `totals`, and is
+    // exactly the single-currency sale it looks like.
+    expect(joined(sale())).toContain(`Kassadan mijozga ${money(24000)}`)
+  })
 })
 
 /**

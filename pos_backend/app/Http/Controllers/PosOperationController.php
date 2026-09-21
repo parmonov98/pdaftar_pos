@@ -36,6 +36,10 @@ class PosOperationController extends Controller {
             // key and get "Server Error" — which tells it nothing and looks
             // like the POS is broken rather than its cached list being stale.
             'currency_id' => ['nullable', 'integer', 'exists:currencies,id'],
+            // Which basket this sale belongs to, when the basket spanned more
+            // than one currency and therefore had to become more than one
+            // sale. Absent for the ordinary single-currency sale.
+            'sale_group_id' => ['nullable', 'string', 'max:64'],
             'client_id' => ['nullable', 'integer', 'exists:clients,id'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'max:24'],
