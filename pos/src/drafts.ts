@@ -160,6 +160,10 @@ export function addLine(lines: DraftLine[], product: Product): DraftLine[] {
       quantity: 1,
       price: priceFor(product, base?.id ?? null) ?? product.price ?? 0,
       productUnitId: base?.id ?? null,
+      // The product's own currency, so a dollar-priced item arrives priced
+      // in dollars rather than silently becoming that many so'm. Null falls
+      // back to the draft's currency at render time.
+      currencyId: product.currency_id ?? null,
     },
   ]
 }

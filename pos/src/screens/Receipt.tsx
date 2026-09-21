@@ -19,9 +19,20 @@ const AUTO_KEY = 'pos.receipt_auto'
  */
 export function ReceiptView({
   receipt,
+  more = [],
   onClose,
 }: {
   receipt: Receipt
+  /**
+   * Further slips printed with this one.
+   *
+   * A basket paid partly in so'm and partly in dollars is one visit and
+   * several sales — one per currency, because a sale has one currency all
+   * the way down to the debt it leaves behind. The customer still gets them
+   * together, on one piece of paper, rather than being handed two receipts
+   * and left to work out that they are the same purchase.
+   */
+  more?: Receipt[]
   onClose: () => void
 }) {
   const [paper, setPaperState] = useState<Paper>(getPaper)
@@ -92,6 +103,41 @@ export function ReceiptView({
 
         {/* The only thing @media print keeps on the page. */}
         <div className={`receipt paper-${paper}`} id="pos-receipt">
+          {[receipt, ...more].map((slip, slipIndex) => (
+          <Slip key={slipIndex} receipt={slip} first={slipIndex === 0} />
+          ))}
+        </div>
+
+        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          {/* Focused on open so Escape and Enter both reach this dialog. The
+              receipt appears by itself after a sale, with focus still on the
+              screen behind it — an Escape handler nothing had focus for would
+              have been a comment rather than a feature. */}
+          <button type="button" className="ghost" style={{ flex: 1 }} autoFocus onClick={onClose}>
+            Yopish
+          </button>
+          <button type="button" className="primary" style={{ flex: 2 }} onClick={() => window.print()}>
+            Chiqarish
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * One printed slip.
+ *
+ * Pulled out of ReceiptView so a basket that spans two currencies can print
+ * both on one piece of paper — each currency is its own sale on the server,
+ * with its own number and its own total, and pretending otherwise on the
+ * paper would mean printing a total that is not money.
+ */
+function Slip({ receipt, first }: { receipt: Receipt; first: boolean }) {
+  return (
+    <>
+      {/* A rule between slips, never above the first one. */}
+      {!first && <div className="r-cut" />}
           <div className="r-center r-shop">{receipt.shopName}</div>
           <div className="r-center r-sub">
             Chek № {receipt.no}
@@ -170,21 +216,6 @@ export function ReceiptView({
           <div className="r-rule" />
           <div className="r-center r-sub">Xaridingiz uchun rahmat!</div>
           <div className="r-center r-tiny">pDaftar POS</div>
-        </div>
-
-        <div className="no-print" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          {/* Focused on open so Escape and Enter both reach this dialog. The
-              receipt appears by itself after a sale, with focus still on the
-              screen behind it — an Escape handler nothing had focus for would
-              have been a comment rather than a feature. */}
-          <button type="button" className="ghost" style={{ flex: 1 }} autoFocus onClick={onClose}>
-            Yopish
-          </button>
-          <button type="button" className="primary" style={{ flex: 2 }} onClick={() => window.print()}>
-            Chiqarish
-          </button>
-        </div>
-      </div>
-    </div>
+    </>
   )
 }

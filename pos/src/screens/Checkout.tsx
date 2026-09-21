@@ -18,11 +18,22 @@ const QUICK_NOTES = [1000, 5000, 10000, 50000, 100000]
  * is 100 000 and the list stopped there. Those are the baskets where the
  * mental arithmetic is hardest and the buttons were missing.
  */
-function tenderSuggestions(total: number): number[] {
-  const notes = QUICK_NOTES.filter((n) => n > total)
+function tenderSuggestions(total: number, code: string): number[] {
+  /*
+   * Both halves of this are so'm-shaped: the note list IS so'm, and the
+   * 10 000 / 50 000 / 100 000 rounding steps are the sizes so'm comes in.
+   * Applied to a six-dollar total they offered "10 000" and "50 000" — not
+   * suggestions, just wrong numbers one tap away from the drawer.
+   *
+   * Another currency gets the round numbers of its own scale instead: the
+   * next whole one, five and ten above the total, which is what a customer
+   * actually hands over for a six-dollar item.
+   */
+  const steps = code === 'UZS' ? [10_000, 50_000, 100_000] : [1, 5, 10]
+  const notes = code === 'UZS' ? QUICK_NOTES.filter((n) => n > total) : []
 
-  const rounded = [10_000, 50_000, 100_000]
-    .map((step) => Math.ceil((total + 1) / step) * step)
+  const rounded = steps
+    .map((step) => Math.ceil((total + step / 1000) / step) * step)
     .filter((n) => n > total)
 
   return [...new Set([...notes, ...rounded])].sort((a, b) => a - b).slice(0, 3)
@@ -40,19 +51,26 @@ function tenderSuggestions(total: number): number[] {
  * other way round, so the receipt records what actually happened rather than
  * what was owed.
  */
+/** One currency's worth of what is owed. */
+export type CheckoutTotal = { currencyId: number; code: string; total: number }
+
 export function Checkout({
-  total,
+  totals,
   clientId,
   onCancel,
   onConfirm,
 }: {
-  total: number
+  /** One entry per currency in the basket — usually exactly one. */
+  totals: CheckoutTotal[]
   clientId: number | null
   onCancel: () => void
-  onConfirm: (payment: Omit<Payment, 'discount' | 'clientId'>) => Promise<void>
+  onConfirm: (payment: Omit<Payment, 'discounts' | 'clientId'>) => Promise<void>
 }) {
   const [paymentType, setPaymentType] = useState<Payment['paymentType']>('cash')
-  const [paid, setPaid] = useState(String(total))
+  /** Tendered per currency, as typed. Keyed by currency id. */
+  const [paid, setPaid] = useState<Record<number, string>>(() =>
+    Object.fromEntries(totals.map((t) => [t.currencyId, String(t.total)])),
+  )
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,10 +84,26 @@ export function Checkout({
     if (paymentType === null) finishRef.current?.focus()
   }, [paymentType])
 
-  const paidValue = paymentType === null ? 0 : round2(Math.max(0, Number(paid) || 0))
-  const change = paidValue > total ? round2(paidValue - total) : 0
-  const owed = paidValue < total ? round2(total - paidValue) : 0
-  const isCredit = owed > 0
+  /**
+   * What is owed and what was handed over, currency by currency.
+   *
+   * Never summed. A basket of dollars and so'm has two amounts owed and two
+   * amounts tendered, and the one number that would combine them does not
+   * exist — which is the whole reason a mixed sale is submitted as one sale
+   * per currency.
+   */
+  const perCurrency = totals.map((t) => {
+    const tendered = paymentType === null ? 0 : round2(Math.max(0, Number(paid[t.currencyId]) || 0))
+    return {
+      ...t,
+      tendered,
+      change: tendered > t.total ? round2(tendered - t.total) : 0,
+      owed: tendered < t.total ? round2(t.total - tendered) : 0,
+    }
+  })
+
+  const isCredit = perCurrency.some((c) => c.owed > 0)
+  const mixed = totals.length > 1
 
   async function submit(event?: React.FormEvent) {
     event?.preventDefault()
@@ -82,7 +116,11 @@ export function Checkout({
 
     setBusy(true)
     try {
-      await onConfirm({ paymentType, paidAmount: paidValue, note })
+      await onConfirm({
+        paymentType,
+        paid: Object.fromEntries(perCurrency.map((c) => [c.currencyId, c.tendered])),
+        note,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Xatolik')
     } finally {
@@ -121,7 +159,15 @@ export function Checkout({
           }
         }}
       >
-        <h2>To'lov — {formatMoney(total)}</h2>
+        <h2>
+          To'lov —{' '}
+          {perCurrency.map((c, i) => (
+            <span key={c.currencyId}>
+              {i > 0 && ' + '}
+              {formatMoney(c.total)} {c.code}
+            </span>
+          ))}
+        </h2>
 
         {error && <div className="notice err">{error}</div>}
 
@@ -135,7 +181,7 @@ export function Checkout({
                 className={paymentType === value ? 'on' : ''}
                 onClick={() => {
                   setPaymentType(value as Payment['paymentType'])
-                  setPaid(String(total))
+                  setPaid(Object.fromEntries(totals.map((t) => [t.currencyId, String(t.total)])))
                 }}
               >
                 {label}
@@ -146,7 +192,7 @@ export function Checkout({
               className={paymentType === null ? 'on' : ''}
               onClick={() => {
                 setPaymentType(null)
-                setPaid('0')
+                setPaid(Object.fromEntries(totals.map((t) => [t.currencyId, '0'])))
               }}
             >
               Nasiya
@@ -154,29 +200,46 @@ export function Checkout({
           </div>
         </div>
 
-        {paymentType !== null && (
-          <div className="field">
-            <label htmlFor="paid">Berilgan summa</label>
-            <input
-              id="paid"
-              type="number"
-              min="0"
-              autoFocus
-              value={paid}
-              onChange={(e) => setPaid(e.target.value)}
-            />
-            <div className="seg" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => setPaid(String(total))}>
-                Aniq
-              </button>
-              {tenderSuggestions(total).map((n) => (
-                <button key={n} type="button" onClick={() => setPaid(String(n))}>
-                  {formatMoney(n)}
+        {/* One amount field per currency. A customer paying for a
+            dollar-priced item and a so'm-priced one hands over two lots of
+            money, and a single field could only ever record one of them. */}
+        {paymentType !== null &&
+          perCurrency.map((c, index) => (
+            <div className="field" key={c.currencyId}>
+              <label htmlFor={`paid-${c.currencyId}`}>
+                Berilgan summa{mixed ? ` — ${c.code}` : ''}
+              </label>
+              <input
+                id={`paid-${c.currencyId}`}
+                type="number"
+                min="0"
+                autoFocus={index === 0}
+                value={paid[c.currencyId] ?? ''}
+                onChange={(e) =>
+                  setPaid((prev) => ({ ...prev, [c.currencyId]: e.target.value }))
+                }
+              />
+              <div className="seg" style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPaid((prev) => ({ ...prev, [c.currencyId]: String(c.total) }))
+                  }
+                >
+                  Aniq
                 </button>
-              ))}
+                {tenderSuggestions(c.total, c.code).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPaid((prev) => ({ ...prev, [c.currencyId]: String(n) }))}
+                  >
+                    {formatMoney(n)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          ))}
 
         <div className="field">
           <label htmlFor="note">Izoh</label>
@@ -184,20 +247,39 @@ export function Checkout({
         </div>
 
         <div className="totals" style={{ borderTop: '1px solid var(--line)', padding: '12px 0 0' }}>
-          <div className="row grand">
-            <span>To'lash</span>
-            <span>{formatMoney(total)}</span>
-          </div>
-          {change > 0 && (
-            <div className="row" style={{ color: 'var(--ok-text)', fontSize: 17, fontWeight: 600 }}>
-              <span>Qaytim</span>
-              <span>{formatMoney(change)}</span>
+          {perCurrency.map((c) => (
+            <div key={c.currencyId}>
+              <div className="row grand">
+                <span>To'lash{mixed ? ` · ${c.code}` : ''}</span>
+                <span>
+                  {formatMoney(c.total)} {c.code}
+                </span>
+              </div>
+              {c.change > 0 && (
+                <div
+                  className="row"
+                  style={{ color: 'var(--ok-text)', fontSize: 17, fontWeight: 600 }}
+                >
+                  <span>Qaytim</span>
+                  <span>
+                    {formatMoney(c.change)} {c.code}
+                  </span>
+                </div>
+              )}
+              {c.owed > 0 && (
+                <div className="row" style={{ color: 'var(--warn-text)' }}>
+                  <span>Qarzga qoladi</span>
+                  <span>
+                    {formatMoney(c.owed)} {c.code}
+                  </span>
+                </div>
+              )}
             </div>
-          )}
-          {owed > 0 && (
-            <div className="row" style={{ color: 'var(--warn-text)' }}>
-              <span>Qarzga qoladi</span>
-              <span>{formatMoney(owed)}</span>
+          ))}
+          {mixed && (
+            <div className="hint">
+              Har bir valyuta alohida sotuv bo'lib yoziladi — qarz ham alohida
+              hisoblanadi. Summalar qo'shilmaydi.
             </div>
           )}
         </div>

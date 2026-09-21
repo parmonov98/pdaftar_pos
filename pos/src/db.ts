@@ -135,6 +135,18 @@ export type DraftLine = {
   quantity: number
   price: number
   /**
+   * Which currency THIS line is priced in.
+   *
+   * Per line, not per basket: a shop that keeps its electronics in dollars
+   * and its bread in so'm sells both to the same customer in one visit, and
+   * before this the second half had to be rung up as a separate sale or,
+   * worse, typed in at a rate the cashier did up in their head.
+   *
+   * Absent means the draft's own currency, which is what every line written
+   * before this existed means — an open tab from yesterday keeps working.
+   */
+  currencyId?: number | null
+  /**
    * Which unit this line is sold in. Null means the product's base unit,
    * which is also what every line written before multi-unit existed means —
    * so an open draft from yesterday keeps working.

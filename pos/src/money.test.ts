@@ -3,10 +3,12 @@ import { addLine, priceFor } from './drafts'
 import {
   cancelBlocker,
   cancelEffects,
+  cartByCurrency,
   cartSubtotal,
   formatMoney,
   lineTotal,
   owedIn,
+  subtotalsByCurrency,
   type CancellableSale,
   type CartLine,
 } from './sales'
@@ -119,6 +121,7 @@ describe('cart totals', () => {
     quantity: 3,
     price: 12000,
     productUnitId: DONA.id,
+    currencyId: 1,
     ...over,
   })
 
@@ -243,5 +246,54 @@ describe('cancelEffects', () => {
 
   it('says nothing about a repayment when there was none', () => {
     expect(joined(sale({ repaid_amount: 0 }))).not.toContain('haqdorlik')
+  })
+})
+
+/**
+ * A basket in two currencies.
+ *
+ * The rule the whole till is built on: so'm and dollars are never added,
+ * never compared, never averaged. A mixed basket therefore is not one sale
+ * with one total — it is one sale per currency, and these check the shape
+ * the screen and the receipt are built from.
+ */
+describe('cartByCurrency', () => {
+  const at = (currencyId: number, price: number, quantity = 1): CartLine => ({
+    product: fanta(),
+    quantity,
+    price,
+    productUnitId: DONA.id,
+    currencyId,
+  })
+
+  it('keeps one currency as a single group', () => {
+    const groups = cartByCurrency([at(1, 12000), at(1, 4000)])
+    expect([...groups.keys()]).toEqual([1])
+    expect(groups.get(1)).toHaveLength(2)
+  })
+
+  it('splits a mixed basket', () => {
+    const groups = cartByCurrency([at(1, 12000), at(2, 11), at(1, 4000)])
+    expect([...groups.keys()]).toEqual([1, 2])
+    expect(groups.get(1)).toHaveLength(2)
+    expect(groups.get(2)).toHaveLength(1)
+  })
+
+  it('orders the groups so the panel does not reshuffle as lines are added', () => {
+    expect([...cartByCurrency([at(2, 11), at(1, 12000)]).keys()]).toEqual([1, 2])
+  })
+
+  it('totals each currency on its own', () => {
+    const totals = subtotalsByCurrency([at(1, 12000, 2), at(2, 11), at(1, 4000)])
+
+    // 28 000 so'm and 11 dollars. There is deliberately no third number:
+    // 28 011 would be the bug this shape exists to make impossible.
+    expect(totals.get(1)).toBe(28000)
+    expect(totals.get(2)).toBe(11)
+    expect(totals.size).toBe(2)
+  })
+
+  it('does not invent a currency for an empty basket', () => {
+    expect(subtotalsByCurrency([]).size).toBe(0)
   })
 })

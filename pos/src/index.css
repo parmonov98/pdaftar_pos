@@ -1294,3 +1294,56 @@ label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px
   .list-head > .sort-th:not(:first-child):not(:last-of-type) { display: none; }
   .hist-head .hist-head-pad { width: 44px; }
 }
+
+/* ─── Unit picker and per-line currency ─── */
+
+/*
+ * The unit sat inside the quantity stepper as a <select>, about 70px wide:
+ * "karobka" clipped to "karob…", changing it meant opening a drop-down, and
+ * nothing anywhere said that a karobka was twelve. Which unit is being sold
+ * decides the price AND how much stock leaves the shelf, so it gets a row of
+ * its own under the stepper, one button per way of selling the product, with
+ * the conversion written on it.
+ */
+.unit-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  justify-content: center;
+}
+.unit-pick.one { color: var(--muted); font-size: 12px; }
+
+.unit-pick button {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 9px;
+  font-size: 12.5px;
+  line-height: 1.2;
+  border-radius: 999px;
+  background: var(--panel-2);
+}
+.unit-pick button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+.unit-pick button.on:hover:not(:disabled) { background: var(--accent-hover); }
+/* The conversion rides along quieter than the name — it is reference, not
+   the thing being chosen. */
+.unit-pick .u-conv { font-size: 11px; opacity: 0.75; }
+
+/* One tap cycles the shop's currencies. A drop-down for two options is a
+   drop-down too many on a screen where the hand is on the keys. */
+.line-ccy {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: var(--panel-3);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.line-ccy:hover:not(:disabled) { border-color: var(--accent); }

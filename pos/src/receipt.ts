@@ -1,6 +1,6 @@
 import { db, type OutboxItem } from './db'
 import type { RecentSale } from './api'
-import { round2, type CartLine, type SaleOutcome } from './sales'
+import { round2, type CartLine, type SalePart } from './sales'
 
 /**
  * The POS's own receipt.
@@ -69,7 +69,8 @@ export const PAYMENT_LABELS: Record<string, string> = {
  * server.
  */
 export function receiptFromSale(
-  outcome: SaleOutcome,
+  /** ONE currency's worth of the basket — see submitSale. */
+  part: SalePart,
   lines: CartLine[],
   context: {
     shopName: string
@@ -90,19 +91,24 @@ export function receiptFromSale(
   },
 ): Receipt {
   const subtotal = round2(lines.reduce((sum, l) => sum + l.quantity * l.price, 0))
-  const serverId = outcome.serverData?.sale_id
+  // `data.sale.id`, not `data.sale_id`. The server answers
+  // `{sale: {...}}` — the flat key never existed, so this was always
+  // undefined and every receipt printed the local L- number even for a sale
+  // the server had already numbered. The shop's own sale number is the one
+  // a customer quotes when they come back.
+  const serverId = (part.serverData?.sale as { id?: number } | undefined)?.id
 
   return {
-    no: outcome.synced && serverId != null
+    no: part.synced && serverId != null
       ? String(serverId)
       // Not a sale number — the server has not issued one. Prefixed and
       // shortened so it cannot be read as one.
-      : `L-${outcome.clientOperationId.slice(0, 8).toUpperCase()}`,
+      : `L-${part.clientOperationId.slice(0, 8).toUpperCase()}`,
     // Nasiya first: an unpaid sale is a debt whether or not it has synced yet.
     // `pending` is only for a PAID sale still sitting in the outbox — worth
     // saying on the paper, because the money is in the drawer but the books do
     // not know about it yet.
-    kind: context.isCredit ? 'credit' : outcome.synced ? 'paid' : 'pending',
+    kind: context.isCredit ? 'credit' : part.synced ? 'paid' : 'pending',
     shopName: context.shopName,
     sellerName: context.sellerName,
     occurredAt: new Date().toISOString(),
@@ -115,11 +121,11 @@ export function receiptFromSale(
     })),
     subtotal,
     discount: context.discount,
-    total: outcome.total,
+    total: part.total,
     paymentType: context.paymentType,
-    paid: context.isCredit ? 0 : round2(outcome.total + outcome.change),
-    change: outcome.change,
-    owed: context.isCredit ? outcome.total : 0,
+    paid: context.isCredit ? 0 : round2(part.total + part.change),
+    change: part.change,
+    owed: context.isCredit ? part.total : 0,
     clientName: context.clientName,
     currency: context.currency,
   }

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type Client, type Currency, type DraftLine, type Product, type SaleDraft, type Unit } from '../db'
+import {
+  db,
+  type Client,
+  type Currency,
+  type DraftLine,
+  type Product,
+  type ProductUnitOption,
+  type SaleDraft,
+  type Unit,
+} from '../db'
 import { type MeResponse } from '../api'
 import {
   addLine,
@@ -11,7 +20,15 @@ import {
   setActiveDraftId,
   updateDraft,
 } from '../drafts'
-import { cartSubtotal, formatMoney, lineTotal, round2, submitSale, type CartLine, type Payment } from '../sales'
+import {
+  formatMoney,
+  lineTotal,
+  round2,
+  subtotalsByCurrency,
+  submitSale,
+  type CartLine,
+  type Payment,
+} from '../sales'
 import { lastSyncAt, pendingCount, syncNow } from '../sync'
 import { getTheme, setTheme, type Theme } from '../theme'
 import { Checkout } from './Checkout'
@@ -55,6 +72,13 @@ const SPLIT_KEY = 'pos.split_dir'
 /** The columns the basket can be ordered by. */
 type CartCol = 'name' | 'qty' | 'price' | 'total'
 
+/** "×12", or "12/5" when the ratio is not whole. Empty for the base unit. */
+function conversionLabel(unit: ProductUnitOption): string {
+  if (unit.numerator === 1 && unit.denominator === 1) return ''
+  if (unit.denominator === 1) return `×${unit.numerator}`
+  return `${unit.numerator}/${unit.denominator}`
+}
+
 export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) {
   const shopCurrency = me.shop.currency_id ?? 1
 
@@ -86,6 +110,8 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   const [cartSort, setCartSort] = useState<SortState<CartCol>>(null)
   const [clientPicker, setClientPicker] = useState(false)
   const [receipt, setReceipt] = useState<Receipt | null>(null)
+  /** The other currencies' slips, printed with the first. */
+  const [moreReceipts, setMoreReceipts] = useState<Receipt[]>([])
 
   const [theme, setThemeState] = useState<Theme>(getTheme)
   const [online, setOnline] = useState(navigator.onLine)
@@ -288,6 +314,9 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
           } satisfies Product),
         quantity: line.quantity,
         price: line.price,
+        // The line's own currency, falling back to the tab's for lines
+        // written before a line could have one of its own.
+        currencyId: line.currencyId ?? active.currencyId,
       }
     })
   }, [active, productsById])
@@ -403,6 +432,24 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
         return
       }
 
+      // F6 — the highlighted line's unit, from the keyboard. The picker was
+      // a mouse-only control on a screen whose whole point is that it is
+      // not, so a till without a mouse could ring up bottles and never
+      // boxes.
+      if (event.key === 'F6') {
+        event.preventDefault()
+        const line = cart[cartCursor]
+        if (!line) return
+
+        const units = (line.product.units ?? []).filter((u) => u.is_active)
+        if (units.length < 2) return
+
+        const at = units.findIndex((u) => u.id === line.productUnitId)
+        setPane('cart')
+        setLineUnit(line.product.id, units[(at + 1) % units.length].id)
+        return
+      }
+
       // Forward Tab moves between the two work panes. Shift+Tab is left
       // alone on purpose: it is the way OUT of the work area, to the tab
       // strip, the top bar and the sale-wide controls. Swallowing both left
@@ -499,19 +546,52 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
   }, [cart.length])
 
 
-  const subtotal = cartSubtotal(cart)
+  /** Subtotal per currency — the basket is no longer one number. */
+  const subtotals = useMemo(() => subtotalsByCurrency(cart), [cart])
 
-  const discount = useMemo(() => {
-    if (!active) return 0
+  /**
+   * The discount, per currency.
+   *
+   * A PERCENTAGE applies cleanly to each currency: ten per cent off is ten
+   * per cent off whatever the line is priced in. An AMOUNT cannot — "5 000
+   * off" of a basket holding dollars and so'm names a sum in one of them
+   * and says nothing about the other — so it is applied to the tab's own
+   * currency and the panel says as much when the basket is mixed.
+   */
+  const discounts = useMemo(() => {
+    const out = new Map<number, number>()
+    if (!active) return out
+
     const raw = Math.max(0, Number(active.discountValue) || 0)
-    if (raw === 0) return 0
-    // A percentage is of the basket; an amount is the amount. Capped either way
-    // so a mistyped discount cannot produce a negative sale.
-    const value = active.discountMode === 'percent' ? (subtotal * raw) / 100 : raw
-    return round2(Math.min(value, subtotal))
-  }, [active, subtotal])
+    if (raw === 0) return out
 
-  const total = round2(subtotal - discount)
+    for (const [currencyId, sub] of subtotals) {
+      const value =
+        active.discountMode === 'percent'
+          ? (sub * raw) / 100
+          : currencyId === active.currencyId
+            ? raw
+            : 0
+      // Capped, so a mistyped discount cannot produce a negative sale.
+      if (value > 0) out.set(currencyId, round2(Math.min(value, sub)))
+    }
+
+    return out
+  }, [active, subtotals])
+
+  /** What is owed, per currency. */
+  const totals = useMemo(() => {
+    const out = new Map<number, number>()
+    for (const [currencyId, sub] of subtotals) {
+      out.set(currencyId, round2(sub - (discounts.get(currencyId) ?? 0)))
+    }
+    return out
+  }, [subtotals, discounts])
+
+  // The one remaining single-number figure, and it is only ever shown
+  // beside its own currency. There is deliberately no `total` for the
+  // basket as a whole: every place that wanted one now reads `totals`.
+  const discount = [...discounts.values()].reduce((a, b) => a + b, 0)
 
   // Lines the cashier has not put a price on. Reachable two ways: switching to
   // a unit the shop never priced, or a product saved without a price at all.
@@ -538,6 +618,48 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
     }
   }
 
+
+  /**
+   * Switch a line to another unit.
+   *
+   * The price follows the unit, and when the shop never set one for this
+   * unit the line goes to zero rather than keeping the bottle's price on a
+   * box. Carrying it over is the exact loss the picker exists to prevent and
+   * it would look entirely normal on screen; zero does not — the line turns
+   * red and checkout refuses it.
+   */
+  function setLineUnit(productId: number, unitId: number | null) {
+    mutateLines((lines) =>
+      lines.map((l) =>
+        l.productId === productId
+          ? {
+              ...l,
+              productUnitId: unitId,
+              price: priceFor(productsById.get(productId)!, unitId) ?? 0,
+            }
+          : l,
+      ),
+    )
+  }
+
+  /**
+   * Move a line to the next currency the shop keeps.
+   *
+   * The PRICE IS NOT CONVERTED. There is no rate on this till and inventing
+   * one would quietly restate what the customer is being charged; the number
+   * stays as typed and only the currency it is counted in changes, which is
+   * what a cashier correcting "that one is in dollars" actually means.
+   */
+  function cycleLineCurrency(productId: number, from: number) {
+    const ids = currencies.map((c) => c.id)
+    if (ids.length < 2) return
+
+    const next = ids[(Math.max(0, ids.indexOf(from)) + 1) % ids.length]
+    mutateLines((lines) =>
+      lines.map((l) => (l.productId === productId ? { ...l, currencyId: next } : l)),
+    )
+  }
+
   /**
    * The one door to the payment step, for the button and for F4 alike.
    *
@@ -558,7 +680,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
     setCheckout(true)
   }
 
-  async function confirmSale(payment: Omit<Payment, 'discount' | 'clientId'>) {
+  async function confirmSale(payment: Omit<Payment, 'discounts' | 'clientId'>) {
     if (!active) return
 
     // Snapshot the cart BEFORE it is cleared — the receipt needs the product
@@ -567,28 +689,43 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
     const outcome = await submitSale(
       cart,
-      { ...payment, discount, clientId: active.clientId },
+      {
+        ...payment,
+        discounts: Object.fromEntries(discounts),
+        clientId: active.clientId,
+      },
       currencyId,
     )
 
-    const slip = receiptFromSale(outcome, printed, {
-      shopName: me.shop.name,
-      sellerName: me.user.name ?? me.user.phone_number ?? '—',
-      clientName: active.clientName,
-      currency: currencyCode(currencyId),
-      paymentType: payment.paymentType,
-      discount,
-      isCredit: payment.paidAmount < total,
-      // product_unit_id -> "karobka". Resolved here because this is the only
-      // place holding both the cart and the units table.
-      unitNames: Object.fromEntries(
-        printed.flatMap((l) =>
-          (l.product.units ?? []).map((u) => [u.id, unitName(u.unit_id)] as const),
-        ),
+    const unitNames = Object.fromEntries(
+      printed.flatMap((l) =>
+        (l.product.units ?? []).map((u) => [u.id, unitName(u.unit_id)] as const),
       ),
+    )
+
+    // One slip per currency, each attached to its own outbox row so Navbat
+    // can reprint either half on its own.
+    const slips = outcome.parts.map((part) => {
+      const partLines = printed.filter((l) => l.currencyId === part.currencyId)
+
+      const slip = receiptFromSale(part, partLines, {
+        shopName: me.shop.name,
+        sellerName: me.user.name ?? me.user.phone_number ?? '—',
+        clientName: active.clientName,
+        currency: currencyCode(part.currencyId),
+        paymentType: payment.paymentType,
+        discount: part.discount,
+        isCredit: part.paid + 0.000001 < part.total,
+        // product_unit_id -> "karobka". Resolved here because this is the
+        // only place holding both the cart and the units table.
+        unitNames,
+      })
+
+      return { part, slip }
     })
 
-    await attachReceipt(outcome.seq, slip)
+    for (const { part, slip } of slips) await attachReceipt(part.seq, slip)
+    const slip = slips[0].slip
 
     // The finished tab is closed rather than emptied: a seller who rang up a
     // sale is done with that customer, and an empty tab left behind would
@@ -600,17 +737,24 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
     setCheckout(false)
     setPending(await pendingCount())
     setReceipt(slip)
+    setMoreReceipts(slips.slice(1).map((s) => s.slip))
+
+    // Per currency, joined — never added up.
+    const money = outcome.parts
+      .map((p) => `${formatMoney(p.total)} ${currencyCode(p.currencyId)}`)
+      .join(' + ')
 
     if (outcome.synced) {
-      const change = outcome.change > 0 ? ` · Qaytim: ${formatMoney(outcome.change)}` : ''
-      say('ok', `Sotuv yozildi: ${formatMoney(outcome.total)}${change}`)
+      const back = outcome.parts
+        .filter((p) => p.change > 0)
+        .map((p) => `${formatMoney(p.change)} ${currencyCode(p.currencyId)}`)
+        .join(' + ')
+
+      say('ok', `Sotuv yozildi: ${money}${back ? ` · Qaytim: ${back}` : ''}`)
     } else {
       // Not an error. The sale is durable in the outbox; it just has not
       // reached the server yet.
-      say(
-        'warn',
-        `Sotuv navbatga qo'yildi (${formatMoney(outcome.total)}). Internet paydo bo'lganda yuboriladi.`,
-      )
+      say('warn', `Sotuv navbatga qo'yildi (${money}). Internet paydo bo'lganda yuboriladi.`)
     }
   }
 
@@ -825,6 +969,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                   ? (line.quantity * lineUnit.numerator) / lineUnit.denominator
                   : line.quantity
                 const oversell = stock !== null && lineBase > stock
+                const units = (line.product.units ?? []).filter((u) => u.is_active)
 
                 return (
                   <div
@@ -915,50 +1060,46 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                         >
                           +
                         </button>
-                        {(line.product.units?.length ?? 0) > 1 ? (
-                          <select
-                            className="unit-select"
-                            value={line.productUnitId ?? ''}
-                            aria-label="Birlik"
-                            onChange={(e) => {
-                              const id = e.target.value === '' ? null : Number(e.target.value)
-                              mutateLines((lines) =>
-                                lines.map((l) =>
-                                  l.productId === line.product.id
-                                    ? {
-                                        ...l,
-                                        productUnitId: id,
-                                        // The price follows the unit, and when
-                                        // the shop never set one for this unit
-                                        // the line goes to zero rather than
-                                        // keeping the bottle's price on a box.
-                                        // Carrying it over is the exact loss
-                                        // this picker exists to prevent, and it
-                                        // would look entirely normal on screen.
-                                        // Zero does not: the line turns red and
-                                        // checkout refuses it below.
-                                        price: priceFor(line.product, id) ?? 0,
-                                      }
-                                    : l,
-                                ),
-                              )
-                            }}
-                          >
-                            {line.product.units
-                              ?.filter((u) => u.is_active)
-                              .map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {unitName(u.unit_id)}
-                                  {u.numerator === 1 && u.denominator === 1
-                                    ? ''
-                                    : ` (${u.numerator}/${u.denominator})`}
-                                </option>
-                              ))}
-                          </select>
-                        ) : (
-                          <span className="unit">{unitName(line.product.unit_id)}</span>
-                        )}
                       </div>
+
+                      {/*
+                        The unit, on its own line under the stepper.
+                        
+                        It used to be a <select> wedged into the stepper beside
+                        the number, where the name was clipped to a few
+                        characters, changing it took a drop-down, and nothing
+                        said what a karobka was worth. Which unit is being sold
+                        decides both the price and how much stock leaves the
+                        shelf, so it is worth a row of its own: each way of
+                        selling the product is a button, and the conversion is
+                        written on it.
+                      */}
+                      {units.length > 1 ? (
+                        <div className="unit-pick" role="group" aria-label="Birlik">
+                          {units.map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              className={line.productUnitId === u.id ? 'on' : ''}
+                              aria-pressed={line.productUnitId === u.id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setCartCursor(index)
+                                setLineUnit(line.product.id, u.id)
+                              }}
+                            >
+                              <span className="u-name">{unitName(u.unit_id)}</span>
+                              {conversionLabel(u) && (
+                                <span className="u-conv">{conversionLabel(u)}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="unit-pick one">
+                          <span className="unit">{unitName(line.product.unit_id)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="cell c">
@@ -978,7 +1119,32 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                             )
                           }
                         />
-                        <span className="unit">{currencyCode(currencyId)}</span>
+                        {/*
+                          The currency of THIS line.
+                          
+                          One button cycling the shop's currencies rather than
+                          a drop-down: there are two of them in practice, and
+                          a basket holding a dollar-priced phone beside a
+                          so'm-priced loaf is an ordinary visit that used to
+                          have to be rung up as two separate sales.
+                        */}
+                        {currencies.length > 1 ? (
+                          <button
+                            type="button"
+                            className="line-ccy"
+                            title="Valyutani almashtirish"
+                            aria-label={`Valyuta: ${currencyCode(line.currencyId)}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setCartCursor(index)
+                              cycleLineCurrency(line.product.id, line.currencyId)
+                            }}
+                          >
+                            {currencyCode(line.currencyId)}
+                          </button>
+                        ) : (
+                          <span className="unit">{currencyCode(line.currencyId)}</span>
+                        )}
                       </div>
                     </div>
 
@@ -1011,6 +1177,7 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
               <span><kbd>+</kbd><kbd>−</kbd>miqdor</span>
               <span><kbd>Del</kbd>o'chirish</span>
               <span><kbd>F4</kbd>to'lov</span>
+              <span><kbd>F6</kbd>birlik</span>
               <span><kbd>F7</kbd>mijoz</span>
               <span><kbd>F8</kbd>{splitDir === 'vertical' ? 'yuqori/past' : 'yonma-yon'}</span>
               <span><kbd>F2</kbd>menyu</span>
@@ -1138,20 +1305,41 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                   {formatMoney(cart.reduce((n, l) => n + l.quantity, 0))} dona
                 </span>
               </div>
-              <div className="row">
-                <span className="muted">Jami</span>
-                <span>{formatMoney(subtotal)}</span>
-              </div>
-              {discount > 0 && (
-                <div className="row" style={{ color: 'var(--warn-text)' }}>
-                  <span>Chegirma</span>
-                  <span>− {formatMoney(discount)}</span>
+              {/* One block per currency, never a sum of them. The line a
+                  cashier reads out to the customer is the one place a
+                  made-up number does the most damage. */}
+              {[...subtotals].map(([lineCurrency, sub]) => {
+                const off = discounts.get(lineCurrency) ?? 0
+                const code = currencyCode(lineCurrency)
+
+                return (
+                  <div key={lineCurrency}>
+                    <div className="row">
+                      <span className="muted">Jami{subtotals.size > 1 ? ` · ${code}` : ''}</span>
+                      <span>{formatMoney(sub)}</span>
+                    </div>
+                    {off > 0 && (
+                      <div className="row" style={{ color: 'var(--warn-text)' }}>
+                        <span>Chegirma</span>
+                        <span>− {formatMoney(off)}</span>
+                      </div>
+                    )}
+                    <div className="row grand">
+                      <span>To'lash</span>
+                      <span>
+                        {formatMoney(totals.get(lineCurrency) ?? 0)}{' '}
+                        {subtotals.size > 1 ? code : ''}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+              {subtotals.size > 1 && active?.discountMode === 'amount' && (
+                <div className="hint">
+                  Chegirma faqat {currencyCode(active.currencyId)} qatorlariga
+                  qo'llanadi. Foiz tanlansa — hammasiga.
                 </div>
               )}
-              <div className="row grand">
-                <span>To'lash</span>
-                <span>{formatMoney(total)}</span>
-              </div>
             </div>
 
             <div className="actions">
@@ -1167,7 +1355,14 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
                 disabled={cart.length === 0 || unpriced.length > 0}
                 onClick={openCheckout}
               >
-                To'lov qilish: {formatMoney(total)} {currencyCode(currencyId)}
+                {/* Per currency, joined with +, never added. This button
+                    read "12 006 UZS" for a basket of 12 000 so'm and 6
+                    dollars — a number that is not money, on the control the
+                    cashier presses to take it. */}
+                To'lov qilish:{' '}
+                {[...totals]
+                  .map(([id, value]) => `${formatMoney(value)} ${currencyCode(id)}`)
+                  .join(' + ')}
               </button>
             </div>
 
@@ -1191,7 +1386,11 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
 
       {checkout && (
         <Checkout
-          total={total}
+          totals={[...totals].map(([currencyId, value]) => ({
+            currencyId,
+            code: currencyCode(currencyId),
+            total: value,
+          }))}
           clientId={active?.clientId ?? null}
           onCancel={() => setCheckout(false)}
           onConfirm={confirmSale}
@@ -1212,7 +1411,16 @@ export function Pos({ me, onLogout }: { me: MeResponse; onLogout: () => void }) 
         />
       )}
 
-      {receipt && <ReceiptView receipt={receipt} onClose={() => setReceipt(null)} />}
+      {receipt && (
+        <ReceiptView
+          receipt={receipt}
+          more={moreReceipts}
+          onClose={() => {
+            setReceipt(null)
+            setMoreReceipts([])
+          }}
+        />
+      )}
     </div>
   )
 }

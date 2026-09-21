@@ -42,26 +42,91 @@ export type CartLine = {
   price: number
   /** Which unit is being sold. Null = the product's base unit. */
   productUnitId?: number | null
+  /** Which currency this line is priced in. Resolved, never null here. */
+  currencyId: number
+}
+
+/**
+ * The basket split by currency, each with its own subtotal.
+ *
+ * A basket is no longer one number. Two lines in two currencies have two
+ * totals and there is no third number that means anything — adding eleven
+ * dollars to twelve thousand so'm is the mistake this whole codebase keeps
+ * refusing to make, and it would be made here, on the screen the cashier
+ * reads out loud to the customer.
+ *
+ * Ordered by currency id so the panel does not reshuffle as lines are added.
+ *
+ * @returns Map keyed by currency id
+ */
+export function cartByCurrency(lines: CartLine[]): Map<number, CartLine[]> {
+  const groups = new Map<number, CartLine[]>()
+
+  for (const line of lines) {
+    const existing = groups.get(line.currencyId)
+    if (existing) existing.push(line)
+    else groups.set(line.currencyId, [line])
+  }
+
+  return new Map([...groups.entries()].sort((a, b) => a[0] - b[0]))
+}
+
+/** Subtotal per currency, in the same order. */
+export function subtotalsByCurrency(lines: CartLine[]): Map<number, number> {
+  const totals = new Map<number, number>()
+
+  for (const [currencyId, group] of cartByCurrency(lines)) {
+    totals.set(currencyId, cartSubtotal(group))
+  }
+
+  return totals
 }
 
 export type Payment = {
   /** null = nasiya (nothing handed over). */
   paymentType: 'cash' | 'card' | 'terminal' | 'bank_account' | null
-  paidAmount: number
-  discount: number
+  /**
+   * What was handed over, PER CURRENCY, keyed by currency id.
+   *
+   * A customer buying a dollar-priced phone and a so'm-priced loaf pays two
+   * amounts in two notes. One number could only be recorded against one
+   * currency, which would mark the other half paid or unpaid at random.
+   */
+  paid: Record<number, number>
+  /** Discount, per currency. A discount is money, so it has a currency too. */
+  discounts: Record<number, number>
   clientId: number | null
   note: string
 }
 
-export type SaleOutcome = {
+/** One currency's worth of a basket, as it went to the server. */
+export type SalePart = {
+  currencyId: number
   clientOperationId: string
   /** Outbox row id, so the printable receipt can be stored against the sale. */
   seq: number
+  subtotal: number
+  discount: number
   total: number
+  paid: number
   change: number
-  /** false when the sale is sitting in the outbox waiting for a connection. */
+  /** false when this part is sitting in the outbox waiting for a connection. */
   synced: boolean
   serverData: Record<string, unknown> | null
+  error: string | null
+}
+
+export type SaleOutcome = {
+  /**
+   * One per currency in the basket, in currency order.
+   *
+   * A single-currency basket — which is nearly all of them — has exactly one
+   * part and behaves as it always did.
+   */
+  parts: SalePart[]
+  /** True only when every part reached the server. */
+  synced: boolean
+  /** The first thing that went wrong, if anything did. */
   error: string | null
 }
 
@@ -73,75 +138,124 @@ export function cartSubtotal(lines: CartLine[]): number {
   return round2(lines.reduce((sum, line) => sum + lineTotal(line), 0))
 }
 
+/**
+ * Ring up the basket.
+ *
+ * **One sale per currency.** A mixed basket is submitted as several
+ * `sale.create` operations in the same outbox batch, one for each currency,
+ * rather than as a single sale carrying a total that is not money. That
+ * keeps every invariant the server already has: a sale has one currency, a
+ * debt is in one currency, and a client's balance is a map of the two — all
+ * of which would have had to be redesigned to make one row hold both, for a
+ * basket the customer still experiences as one visit and one receipt.
+ *
+ * Sent in one batch and in currency order, so either the whole basket
+ * reaches the server or it waits in the outbox together.
+ */
 export async function submitSale(
   lines: CartLine[],
   payment: Payment,
-  currencyId: number,
+  fallbackCurrencyId: number,
 ): Promise<SaleOutcome> {
   if (lines.length === 0) throw new Error('Savatcha bo\'sh')
 
-  const subtotal = cartSubtotal(lines)
-  const discount = round2(Math.min(payment.discount, subtotal))
-  const total = round2(subtotal - discount)
+  const groups = cartByCurrency(
+    lines.map((line) => ({ ...line, currencyId: line.currencyId || fallbackCurrencyId })),
+  )
 
-  if (total <= 0) throw new Error('Savdo summasi 0 dan katta bo\'lishi kerak')
+  const planned: Array<{
+    currencyId: number
+    lines: CartLine[]
+    subtotal: number
+    discount: number
+    total: number
+    paid: number
+  }> = []
 
-  const isCredit = payment.paidAmount < total
+  for (const [currencyId, group] of groups) {
+    const subtotal = cartSubtotal(group)
+    const discount = round2(Math.min(payment.discounts[currencyId] ?? 0, subtotal))
+    const total = round2(subtotal - discount)
+    const paid = round2(payment.paid[currencyId] ?? 0)
 
-  // Refused here rather than at the server so the cashier finds out while the
-  // customer is still standing there, not at sync time hours later.
-  if (isCredit && payment.clientId === null) {
-    throw new Error('Nasiya sotuv uchun mijoz tanlang')
+    // Zero-total halves are dropped rather than sent: a currency whose whole
+    // value was discounted away is not a sale, and the server refuses a
+    // basket that totals nothing anyway.
+    if (total <= 0 && paid <= 0) continue
+
+    // Refused here rather than at the server so the cashier finds out while
+    // the customer is still standing there, not at sync time hours later.
+    if (paid + 0.000001 < total && payment.clientId === null) {
+      throw new Error('Nasiya sotuv uchun mijoz tanlang')
+    }
+
+    planned.push({ currencyId, lines: group, subtotal, discount, total, paid })
   }
 
-  const payload = {
-    currency_id: currencyId,
-    client_id: payment.clientId,
-    payment_type: payment.paidAmount > 0 ? payment.paymentType : null,
-    paid_amount: payment.paidAmount > 0 ? payment.paidAmount : null,
-    discount_amount: discount,
-    note: payment.note || null,
-    items: lines.map((line) => ({
-      product_id: line.product.id,
-      // Without this the server prices the base unit and takes one off the
-      // shelf instead of twelve.
-      product_unit_id: line.productUnitId ?? null,
-      quantity: line.quantity,
-      price: line.price,
-    })),
-  }
+  if (planned.length === 0) throw new Error('Savdo summasi 0 dan katta bo\'lishi kerak')
 
-  const label = `Sotuv · ${lines.length} ta · ${formatMoney(total)}`
-  const item = await enqueue('sale.create', payload, label)
+  const parts: SalePart[] = []
+
+  for (const plan of planned) {
+    const payload = {
+      currency_id: plan.currencyId,
+      client_id: payment.clientId,
+      payment_type: plan.paid > 0 ? payment.paymentType : null,
+      paid_amount: plan.paid > 0 ? plan.paid : null,
+      discount_amount: plan.discount,
+      note: payment.note || null,
+      items: plan.lines.map((line) => ({
+        product_id: line.product.id,
+        // Without this the server prices the base unit and takes one off the
+        // shelf instead of twelve.
+        product_unit_id: line.productUnitId ?? null,
+        quantity: line.quantity,
+        price: line.price,
+      })),
+    }
+
+    const label = `Sotuv · ${plan.lines.length} ta · ${formatMoney(plan.total)}`
+    const item = await enqueue('sale.create', payload, label)
+
+    parts.push({
+      currencyId: plan.currencyId,
+      clientOperationId: item.client_operation_id,
+      seq: item.seq!,
+      subtotal: plan.subtotal,
+      discount: plan.discount,
+      total: plan.total,
+      paid: plan.paid,
+      change: plan.paid > plan.total ? round2(plan.paid - plan.total) : 0,
+      synced: false,
+      serverData: null,
+      error: null,
+    })
+  }
 
   await decrementLocalStock(lines)
 
-  let synced = false
-  let serverData: Record<string, unknown> | null = null
-  let error: string | null = null
-
+  // One push for the whole basket — the parts are already queued, so a
+  // failure here leaves them all waiting together rather than half sent.
+  let pushError: string | null = null
   try {
     await pushOutbox()
-    const stored = await db.outbox.get(item.seq!)
-    synced = stored?.status === 'sent'
-    serverData = stored?.result ?? null
-    if (!synced) error = stored?.error ?? null
   } catch (e) {
-    // Offline, or the server is down. Entirely expected — the sale is safe in
-    // the outbox and nothing here needs to be undone.
-    error = e instanceof Error ? e.message : String(e)
+    // Offline, or the server is down. Entirely expected — the sale is safe
+    // in the outbox and nothing here needs to be undone.
+    pushError = e instanceof Error ? e.message : String(e)
   }
 
-  const change = payment.paidAmount > total ? round2(payment.paidAmount - total) : 0
+  for (const part of parts) {
+    const stored = await db.outbox.get(part.seq)
+    part.synced = stored?.status === 'sent'
+    part.serverData = stored?.result ?? null
+    if (!part.synced) part.error = stored?.error ?? pushError
+  }
 
   return {
-    clientOperationId: item.client_operation_id,
-    seq: item.seq!,
-    total,
-    change,
-    synced,
-    serverData,
-    error,
+    parts,
+    synced: parts.every((p) => p.synced),
+    error: parts.find((p) => p.error)?.error ?? null,
   }
 }
 
