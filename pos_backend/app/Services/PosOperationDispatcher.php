@@ -15,6 +15,7 @@ use Pos\Models\PosTerminal;
 use Pos\Models\Product;
 use Pos\Models\ProductPrice;
 use Pos\Models\ProductUnit;
+use Pos\Models\Sale;
 use Pos\Models\StockMovement;
 
 /**
@@ -278,10 +279,28 @@ class PosOperationDispatcher {
             throw new BusinessException('Summa noldan katta bo\'lishi kerak');
         }
 
+        // `sale_id` is only `exists:sales,id` at the request layer, i.e. any
+        // sale anywhere. Bind it to THIS shop and THIS client before it is
+        // written: otherwise a till could record a payment against another
+        // shop's sale, and that shop's sale history would show an inflated
+        // "repaid" total (PosSaleHistoryController sums payments on sale_id).
+        $saleId = isset($payload['sale_id']) ? (int) $payload['sale_id'] : null;
+        if ($saleId !== null) {
+            $saleBelongs = Sale::query()
+                ->where('id', $saleId)
+                ->where('shop_id', $terminal->shop_id)
+                ->where('client_id', $client->id)
+                ->exists();
+
+            if (! $saleBelongs) {
+                throw new BusinessException('Sotuv topilmadi');
+            }
+        }
+
         $payment = ClientPayment::create([
             'shop_id' => $terminal->shop_id,
             'client_id' => $client->id,
-            'sale_id' => $payload['sale_id'] ?? null,
+            'sale_id' => $saleId,
             'amount' => $amount,
             // Which debt this settles. A bare number cannot be subtracted
             // from anything: eleven dollars would cancel eleven som. Falls

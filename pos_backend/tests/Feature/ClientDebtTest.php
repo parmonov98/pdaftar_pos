@@ -182,6 +182,42 @@ class ClientDebtTest extends TestCase {
         $this->assertSame(32000.0, $this->client->balanceIn($this->uzs->id));
     }
 
+    /**
+     * A payment may only name a sale that belongs to this shop and this
+     * client. Without the guard a till could post a payment carrying another
+     * shop's sale_id, inflating that shop's "repaid" total in its own history.
+     */
+    public function test_a_payment_cannot_name_another_shops_sale(): void {
+        $otherUser = User::create(['name' => 'Boshqa', 'phone_number' => '+998901119988', 'password' => 'kassa12345']);
+        $otherShop = Shop::create(['name' => 'Boshqa Market', 'owner_id' => $otherUser->id]);
+        $otherShop->forceFill(['currency_id' => $this->uzs->id])->save();
+        $otherUnit = Unit::create(['shop_id' => $otherShop->id, 'name' => 'dona', 'is_default' => true]);
+        $otherProduct = Product::create(['shop_id' => $otherShop->id, 'name' => 'X', 'price' => 1000, 'unit_id' => $otherUnit->id, 'quantity' => 0]);
+        app(PosStockService::class)->recordOpening($otherProduct, 100, null, $otherUser->id);
+        $otherClient = Client::create(['shop_id' => $otherShop->id, 'name' => 'Ularniki']);
+        $otherTerminal = PosTerminal::firstOrCreate(
+            ['shop_id' => $otherShop->id, 'device_id' => 'other-device'],
+            ['user_id' => $otherUser->id, 'name' => 'Boshqa kassa', 'provider' => 'pdaftar_pos', 'is_active' => true],
+        );
+        $foreignSale = app(PosSaleService::class)->create(
+            $otherTerminal,
+            ['items' => [['product_id' => $otherProduct->id, 'quantity' => 1, 'price' => 1000]], 'paid_amount' => 0, 'client_id' => $otherClient->id, 'currency_id' => $this->uzs->id],
+            null,
+            $otherUser->id,
+        );
+
+        // This shop's till tries to attach the other shop's sale to a payment
+        // for its own client — must be refused, not silently written.
+        $this->expectException(BusinessException::class);
+        app(PosOperationDispatcher::class)->dispatch(
+            $this->terminal(),
+            'client.payment',
+            ['client_id' => $this->client->id, 'sale_id' => $foreignSale->id, 'amount' => 1000, 'currency_id' => $this->uzs->id],
+            null,
+            $this->user->id,
+        );
+    }
+
     /** One shop's debtors are not another's. */
     public function test_a_client_belongs_to_one_shop(): void {
         $other = Shop::create(['name' => 'Boshqa', 'owner_id' => $this->user->id]);

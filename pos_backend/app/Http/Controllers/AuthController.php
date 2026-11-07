@@ -41,6 +41,32 @@ class AuthController extends Controller {
      * have to find their own way out of.
      */
     public function register(Request $request): JsonResponse {
+        // Register is unauthenticated and creates a User + Shop + Unit per
+        // call, so with no cap it is both a resource-exhaustion vector and a
+        // phone-enumeration oracle (the "account already exists" message
+        // below). Throttle by IP and by phone — every attempt counts, unlike
+        // login where only failures do — so one source cannot mint accounts
+        // or walk a number list at line speed.
+        $ip = (string) $request->ip();
+        $phoneKey = User::normalisePhone((string) $request->input('phone_number', ''));
+        $keys = ['pos-register:ip:'.$ip];
+        if ($phoneKey !== '') {
+            $keys[] = 'pos-register:phone:'.$phoneKey;
+        }
+
+        foreach ($keys as $key) {
+            if (RateLimiter::tooManyAttempts($key, 10)) {
+                return response()->json([
+                    'message' => 'Juda ko\'p urinish. '
+                        .ceil(RateLimiter::availableIn($key) / 60).' daqiqadan keyin qayta urining.',
+                ], 429);
+            }
+        }
+
+        foreach ($keys as $key) {
+            RateLimiter::hit($key, 3600);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'phone_number' => ['required', 'string', 'max:20'],
