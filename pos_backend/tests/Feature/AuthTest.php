@@ -205,4 +205,24 @@ class AuthTest extends TestCase {
         $response->assertJsonPath('data.shops.0.role', 'seller');
         $this->assertNotSame($ownersShop->id, $response->json('data.shops.0.id'));
     }
+
+    /**
+     * Register creates a User + Shop + Unit per call and is unauthenticated,
+     * so it must be rate limited: otherwise one source can mint accounts
+     * without end and walk a phone-number list via the "account exists"
+     * message. The cap is 10 attempts per IP per hour.
+     */
+    public function test_registration_is_rate_limited_per_ip(): void {
+        for ($i = 0; $i < 10; $i++) {
+            $this->postJson('/api/pos/v1/auth/register', [
+                ...self::VALID,
+                'phone_number' => '+99890000'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+            ])->assertCreated();
+        }
+
+        $this->postJson('/api/pos/v1/auth/register', [
+            ...self::VALID,
+            'phone_number' => '+998905550000',
+        ])->assertStatus(429);
+    }
 }
