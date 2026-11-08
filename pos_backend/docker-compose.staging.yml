@@ -73,7 +73,16 @@ services:
         # network. Exposing 3306 on a public instance is how staging boxes
         # become someone else's.
         healthcheck:
-            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            # Connect as root using the password already in the container env.
+            # The default `healthcheck.sh` logs in as the image's auto-generated
+            # `healthcheck` user, whose password the official image rewrites in
+            # /var/lib/mysql/.my-healthcheck.cnf on every restart but does NOT
+            # re-apply to that user on a persistent volume — so it fails with
+            # "Access denied for 'healthcheck'@'localhost'", the container never
+            # reports healthy, and `depends_on: condition: service_healthy`
+            # blocks php-pos from ever (re)starting (pos-staging outage,
+            # 2026-11-08). A root ping does not depend on that user.
+            test: ["CMD-SHELL", "MYSQL_PWD=\"$$MARIADB_ROOT_PASSWORD\" mariadb-admin ping -uroot --silent"]
             interval: 10s
             timeout: 5s
             retries: 12
